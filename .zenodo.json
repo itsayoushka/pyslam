@@ -1,0 +1,14 @@
+{
+  "title": "pySLAM fork for the GS-AgriField baseline benchmark",
+  "upload_type": "software",
+  "description": "Version of pySLAM used for the baseline benchmark of the GS-AgriField dataset: upstream pySLAM (commit b747a10) with the changes used for the benchmark, and the benchmark scripts, configurations and reference results in configs/gs_agrifield_benchmark/. pySLAM is developed by Luigi Freda (https://github.com/luigifreda/pyslam).",
+  "creators": [
+    {"name": "Dalah, Aya", "affiliation": "INRAE; Cyclair SAS"},
+    {"name": "Freda, Luigi", "orcid": "0000-0002-2268-6045"}
+  ],
+  "license": "GPL-3.0-or-later",
+  "keywords": ["SLAM", "visual odometry", "benchmark", "agricultural robotics"],
+  "related_identifiers": [
+    {"identifier": "https://github.com/luigifreda/pyslam", "relation": "isDerivedFrom", "resource_type": "software"}
+  ]
+}
