@@ -4,7 +4,7 @@
 # illumination: label of the original recording names; not used in the paper (illumination varies within a run).
 # frames: optional first-last image range (inclusive) used instead of the whole sequence.
 # id	name	bag	date	crop	bbch	speed	illumination	valid	note	frames
-01	sugarbeet_bbch19_fast_run001	vo_dataset_2026-06-08_pressac_sugarbeet_bbch19_fast_run001	2026-06-08	sugar beet	19	fast	diffuse	1		
+01	sugarbeet_bbch19p_fast_run001	vo_dataset_2026-06-08_pressac_sugarbeet_bbch19+_fast_run001	2026-06-08	sugar beet	19+	fast	diffuse	1		
 02	maize_bbch14_nominal_run001	vo_dataset_2026-06-08_pressac_maize_bbch14_nominal_run001	2026-06-08	maize	14	nominal	diffuse	1		
 03	maize_bbch14_fast_run002	vo_dataset_2026-06-08_pressac_maize_bbch14_fast_run002	2026-06-08	maize	14	fast	diffuse	1		
 04	maize_bbch14-15_fast_run003	vo_dataset_2026-06-08_pressac_maize_bbch14-15_fast_run003	2026-06-08	maize	14-15	fast	diffuse	1		
@@ -14,4 +14,4 @@
 08	sunflower_bbch10_fast_run001	vo_dataset_2026-06-16_pressac_sunflower_bbch10_fast_run001	2026-06-16	sunflower	10	fast	shadow	1		
 09	maize_bbch19p_fast_run001	vo_dataset_2026-07-08_pressac_maize_bbch19+_fast_run001	2026-07-08	maize	19+	fast	shadow	1		
 10	maize_bbch19p_fast_run002	vo_dataset_2026-07-08_pressac_maize_bbch19+_fast_run002	2026-07-08	maize	19+	fast	shadow	1		
-11	sunflower_bbch19_fast_run001	vo_dataset_2026-07-08_pressac_sunflower_bbch19_fast_run001	2026-07-08	sunflower	19	fast	shadow	1	frame drops after image 2938	0-2938
+11	sunflower_bbch19p_fast_run001	vo_dataset_2026-07-08_pressac_sunflower_bbch19+_fast_run001	2026-07-08	sunflower	19+	fast	shadow	1	frame drops after image 2938	0-2938
