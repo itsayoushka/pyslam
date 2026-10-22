@@ -1,0 +1,10 @@
+date: 2026-10-17T03:40:29+02:00
+host: Linux 6.2.0-26-generic x86_64
+nvidia_driver: 535.274.02, NVIDIA GeForce RTX 4070 Laptop GPU
+docker_image: ubuntu24_cuda_docs_with_state:latest sha256:0d0b6b70b6d3e5868a1c64078def659dfb312b5919ec361bf2ba8f6daf94d7b8
+converter_image: jazzy-vo-converter:latest sha256:182ebb7d6f3982bbb4663c734b065c8a05367430a809cdb289dec6cf3a083f82
+pyslam_upstream: https://github.com/luigifreda/pyslam
+pyslam_commit: 8f414597f30e0114f936ead922fc54a3f278fc06
+pyslam_local_changes:  75 files changed, 2266 insertions(+), 397 deletions(-)   (full patch: pyslam_local_changes.patch)
+converter_sha256: 62f966521acccc210288a3be61b493661db0ab55d098ed7aebd2eadb4cc1afed
+evo: v1.31.1
