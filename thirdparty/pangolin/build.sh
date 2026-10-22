@@ -49,7 +49,7 @@ if [ ! -f pypangolin.cpython-*.so ]; then
                 -DBUILD_PANGOLIN_OPENNI=OFF -DBUILD_PANGOLIN_OPENNI2=OFF \
                 -DBUILD_PANGOLIN_FFMPEG=OFF -DBUILD_PANGOLIN_LIBOPENEXR=OFF \
                 $EXTERNAL_OPTIONS $MAC_OPTIONS 
-    make -j8
+    make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     cd ..
     #python setup.py install
 fi

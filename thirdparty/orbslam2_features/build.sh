@@ -43,6 +43,6 @@ echo "EXTERNAL_OPTIONS: $EXTERNAL_OPTIONS"
 make_dir build
 cd build
 cmake .. $EXTERNAL_OPTIONS $MAC_OPTIONS
-make -j 4
+make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
 
 cd ..

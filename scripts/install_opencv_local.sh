@@ -646,8 +646,8 @@ if [ ! -f $OPENCV_CORE_LIB ]; then
           -DBUILD_EXAMPLES=OFF \
           -Wno-deprecated-gpu-targets ..
     fi
-    make -j$(nproc)  # use nproc to get the number of available cores
-    make install -j$(nproc)
+    make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
+    make install -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     
     # Restore pixi's protobuf headers if we hid them
     if [ "$PIXI_ACTIVATED" = true ]; then

@@ -53,7 +53,7 @@ if [ $INSTALL_OPENCV_FROM_SOURCE -eq 1 ]; then
     $SCRIPTS_DIR/install_opencv_local.sh
 else
     PRE_OPTION="--pre"   # this sometimes helps because a pre-release version of the package might have a wheel available for our version of Python.
-    MAKEFLAGS_OPTION="-j$(nproc)"
+    MAKEFLAGS_OPTION="-j${PYSLAM_BUILD_JOBS:-1} -l${PYSLAM_BUILD_LOAD:-1}"
     CMAKE_ARGS_OPTION="-DOPENCV_ENABLE_NONFREE=ON" # install nonfree modules
 
     MAKEFLAGS="$MAKEFLAGS_OPTION" CMAKE_ARGS="$CMAKE_ARGS_OPTION" pip install $PIP_MAC_OPTIONS opencv-python -vvv $PRE_OPTION
@@ -106,4 +106,3 @@ pip install "numpy<2"
 
 # HACK: Moved the install of the semantic tools at the end of the install process to avoid some conflict issues among the deps
 # $SCRIPTS_DIR/install_pip3_semantics.sh
-

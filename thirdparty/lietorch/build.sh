@@ -38,12 +38,12 @@ fi
 if command -v ninja >/dev/null 2>&1; then
     cmake -G Ninja .. $CUDA_OPTIONS
     # launch parallel build with 8 threads
-    ninja -j$cores
+    ninja -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     sudo $(which ninja) install   # "sudo ninja install" does not work!
 else 
     echo "ninja not found, falling back to make"    
     cmake .. $CUDA_OPTIONS
-    make -j$cores
+    make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     sudo make install  
 fi
 

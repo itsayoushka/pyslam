@@ -139,7 +139,7 @@ fi
 if [[ "$OSTYPE" == "darwin"* ]]; then
     num_cores=$(sysctl -n hw.physicalcpu)
 else 
-    num_cores=$(nproc)
+    num_cores=${PYSLAM_BUILD_JOBS:-1}
 fi
 
 cd open3d
@@ -420,7 +420,7 @@ if [ ! -d install ]; then
     eval $CMAKE_CMD
 
     print_blue "Starting build..."
-    make -j$num_cores
+    make -j"$num_cores" -l"${PYSLAM_BUILD_LOAD:-1}"
 
     # Activate the virtualenv first
     # Install pip package in the current python environment

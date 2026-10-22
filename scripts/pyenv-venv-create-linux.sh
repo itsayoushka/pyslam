@@ -76,7 +76,7 @@ fi
 
 
 PRE_OPTION="--pre"   # this sometimes helps because a pre-release version of the package might have a wheel available for our version of Python.
-MAKEFLAGS_OPTION="-j$(nproc)" 
+MAKEFLAGS_OPTION="-j${PYSLAM_BUILD_JOBS:-1} -l${PYSLAM_BUILD_LOAD:-1}" 
 
 #print_blue "Installing opencv"
 # CMAKE_ARGS_OPTION="-DOPENCV_ENABLE_NONFREE=ON" # install nonfree modules

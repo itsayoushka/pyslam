@@ -25,6 +25,12 @@ print_blue '================================================'
 print_blue "Building pySLAM C++ core"
 print_blue '================================================'
 
+export PYSLAM_BUILD_JOBS="${PYSLAM_BUILD_JOBS:-1}"
+export PYSLAM_BUILD_LOAD="${PYSLAM_BUILD_LOAD:-1}"
+export PYSLAM_CPP_BUILD_JOBS="${PYSLAM_CPP_BUILD_JOBS:-$PYSLAM_BUILD_JOBS}"
+export PYSLAM_CPP_BUILD_LOAD="${PYSLAM_CPP_BUILD_LOAD:-$PYSLAM_BUILD_LOAD}"
+print_blue "Using safe build parallelism: jobs=$PYSLAM_CPP_BUILD_JOBS load=$PYSLAM_CPP_BUILD_LOAD"
+
 cd "$ROOT_DIR/pyslam/slam/cpp"
 ./build.sh
 

@@ -50,6 +50,12 @@ echo "EXTERNAL_OPTIONS: $EXTERNAL_OPTIONS"
 print_blue '================================================'
 print_blue "Building and installing cpp ..."
 
+export PYSLAM_BUILD_JOBS="${PYSLAM_BUILD_JOBS:-1}"
+export PYSLAM_BUILD_LOAD="${PYSLAM_BUILD_LOAD:-1}"
+export PYSLAM_CPP_PYBIND_BUILD_JOBS="${PYSLAM_CPP_PYBIND_BUILD_JOBS:-$PYSLAM_BUILD_JOBS}"
+export PYSLAM_CPP_PYBIND_BUILD_LOAD="${PYSLAM_CPP_PYBIND_BUILD_LOAD:-$PYSLAM_BUILD_LOAD}"
+print_blue "Using safe build parallelism: jobs=$PYSLAM_CPP_PYBIND_BUILD_JOBS load=$PYSLAM_CPP_PYBIND_BUILD_LOAD"
+
 CURRENT_USED_PYENV=$(get_virtualenv_name)
 print_blue "Currently used python virtual environment: $CURRENT_USED_PYENV"
 

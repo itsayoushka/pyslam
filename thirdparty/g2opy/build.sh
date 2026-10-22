@@ -171,6 +171,6 @@ echo "BUILD_TYPE: $BUILD_TYPE"
 make_dir build
 cd build
 cmake .. $EXTERNAL_OPTIONS $MAC_OPTIONS $LINUX_OPTIONS -DCMAKE_BUILD_TYPE=$BUILD_TYPE
-make -j 8
+make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
 
 cd ..

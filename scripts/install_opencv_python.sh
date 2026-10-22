@@ -179,7 +179,7 @@ fi
 cd opencv-python
 MY_OPENCV_PYTHON_PATH=`pwd`
 
-export MAKEFLAGS="-j$(nproc)"
+export MAKEFLAGS="-j${PYSLAM_BUILD_JOBS:-1} -l${PYSLAM_BUILD_LOAD:-1}"
 export CPPFLAGS+=""
 export CPATH+=""
 export CPP_INCLUDE_PATH+=""

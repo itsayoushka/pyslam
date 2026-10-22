@@ -33,6 +33,18 @@ fi
 echo "EXTERNAL_OPTIONS: $EXTERNAL_OPTIONS"
 echo "Using Python executable: $PYTHON_EXE"
 
+if [[ -z "$PYSLAM_PYIBOW_BUILD_JOBS" ]]; then
+    BUILD_JOBS=2
+else
+    BUILD_JOBS="$PYSLAM_PYIBOW_BUILD_JOBS"
+fi
+if [[ -z "$PYSLAM_PYIBOW_BUILD_LOAD" ]]; then
+    BUILD_LOAD=2
+else
+    BUILD_LOAD="$PYSLAM_PYIBOW_BUILD_LOAD"
+fi
+echo "Using build parallelism: jobs=$BUILD_JOBS load_limit=$BUILD_LOAD"
+
 # ====================================================
 
 echo ""
@@ -43,7 +55,7 @@ if [ ! -d build ]; then
 fi
 cd build 
 cmake .. -DCMAKE_BUILD_TYPE=Release $EXTERNAL_OPTIONS $MAC_OPTIONS
-make -j8
+make -j"$BUILD_JOBS" -l"$BUILD_LOAD"
 
 
 echo ""
@@ -55,7 +67,7 @@ if [ ! -d build ]; then
 fi
 cd build 
 cmake .. -DCMAKE_BUILD_TYPE=Release $EXTERNAL_OPTIONS $MAC_OPTIONS
-make -j8
+make -j"$BUILD_JOBS" -l"$BUILD_LOAD"
 
 
 cd ${SCRIPT_DIR}
@@ -64,4 +76,4 @@ if [ ! -d build ]; then
 fi
 cd build 
 cmake .. -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=$PYTHON_EXE $EXTERNAL_OPTIONS $MAC_OPTIONS
-make -j8
+make -j"$BUILD_JOBS" -l"$BUILD_LOAD"

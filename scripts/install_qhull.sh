@@ -132,7 +132,7 @@ if [[ ! -d install ]]; then
         print_red "  Run './scripts/verify_qhull_cpp17.sh' after build for detailed verification"
     fi
     
-	make -j 8
+	make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     make install 
 fi
 

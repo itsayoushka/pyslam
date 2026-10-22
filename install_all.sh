@@ -46,6 +46,10 @@ print_blue '================================================'
 print_blue "Installing pySLAM"
 print_blue '================================================'
 
+export PYSLAM_BUILD_JOBS="${PYSLAM_BUILD_JOBS:-1}"
+export PYSLAM_BUILD_LOAD="${PYSLAM_BUILD_LOAD:-1}"
+print_blue "Using safe build parallelism: jobs=$PYSLAM_BUILD_JOBS load=$PYSLAM_BUILD_LOAD"
+
 # check that conda is activated 
 if [ "$CONDA_INSTALLED" = true ]; then
     print_blue "Installing pySLAM by using conda"

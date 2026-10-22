@@ -110,7 +110,7 @@ if [[ ! -d install ]]; then
 	cd build
     JSON_OPTIONS="-DJSON_BuildTests=OFF"
     cmake .. -DCMAKE_INSTALL_PREFIX="`pwd`/../install" -DCMAKE_BUILD_TYPE=Release $JSON_OPTIONS $EXTERNAL_OPTIONS $MAC_OPTIONS
-	make -j 8
+	make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
     make install 
 fi
 

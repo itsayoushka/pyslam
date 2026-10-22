@@ -2,6 +2,9 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd ) # get script dir (this should be the main folder directory of PLVS)
 SCRIPT_DIR=$(readlink -f $SCRIPT_DIR)  # this reads the actual path if a symbolic directory is used
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCRIPTS_DIR="$ROOT_DIR/scripts"
+cd "$SCRIPT_DIR"
 
 function make_dir(){
 if [ ! -d $1 ]; then
@@ -53,7 +56,19 @@ echo "EXTERNAL_OPTIONS: $EXTERNAL_OPTIONS"
 make_dir build
 cd build
 cmake .. $EXTERNAL_OPTIONS
-make -j 4
+# Keep build pressure low by default to avoid UI/system freeze on laptops.
+if [[ -z "$PYSLAM_GTSAM_BUILD_JOBS" ]]; then
+    BUILD_JOBS=2
+else
+    BUILD_JOBS="$PYSLAM_GTSAM_BUILD_JOBS"
+fi
+if [[ -z "$PYSLAM_GTSAM_BUILD_LOAD" ]]; then
+    BUILD_LOAD=2
+else
+    BUILD_LOAD="$PYSLAM_GTSAM_BUILD_LOAD"
+fi
+echo "Using build parallelism: jobs=$BUILD_JOBS load_limit=$BUILD_LOAD"
+make -j"$BUILD_JOBS" -l"$BUILD_LOAD"
 
 cd ..
 

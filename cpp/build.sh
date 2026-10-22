@@ -5,6 +5,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd ) 
 SCRIPT_DIR=$(readlink -f $SCRIPT_DIR)  # this reads the actual path if a symbolic directory is used
 ROOT_DIR="$SCRIPT_DIR/.."
 SCRIPTS_DIR="$ROOT_DIR/scripts"
+cd "$SCRIPT_DIR"
 
 function make_dir(){
 if [ ! -d $1 ]; then
@@ -79,9 +80,29 @@ BUILD_TYPE="Release"
 
 echo "BUILD_TYPE: $BUILD_TYPE"
 
+PYTHON_EXE=${Python3_EXECUTABLE:-${PYTHON_EXE:-$(which python3)}}
+if [[ -n "$PYTHON_EXE" ]]; then
+    PYTHON_CMAKE_OPTS="-DPython3_EXECUTABLE=$PYTHON_EXE -DPython_EXECUTABLE=$PYTHON_EXE"
+    echo "Using Python executable: $PYTHON_EXE"
+else
+    PYTHON_CMAKE_OPTS=""
+fi
+
+if [[ -z "$PYSLAM_CPP_PYBIND_BUILD_JOBS" ]]; then
+    BUILD_JOBS=2
+else
+    BUILD_JOBS="$PYSLAM_CPP_PYBIND_BUILD_JOBS"
+fi
+if [[ -z "$PYSLAM_CPP_PYBIND_BUILD_LOAD" ]]; then
+    BUILD_LOAD=2
+else
+    BUILD_LOAD="$PYSLAM_CPP_PYBIND_BUILD_LOAD"
+fi
+echo "Using build parallelism: jobs=$BUILD_JOBS load_limit=$BUILD_LOAD"
+
 make_dir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE="$BUILD_TYPE" $EXTERNAL_OPTIONS $CONDA_OPTIONS $MAC_OPTIONS 
-make -j 4
+cmake .. -DCMAKE_BUILD_TYPE="$BUILD_TYPE" $PYTHON_CMAKE_OPTS $EXTERNAL_OPTIONS $CONDA_OPTIONS $MAC_OPTIONS 
+make -j"$BUILD_JOBS" -l"$BUILD_LOAD"
 
 cd ..
