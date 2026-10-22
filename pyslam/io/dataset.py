@@ -296,6 +296,8 @@ class FolderDataset(Dataset):
         timestamps=None,
         start_frame_id=0,
         type=DatasetType.VIDEO,
+        image_scale=1.0,
+        max_frames=None,
     ):
         super().__init__(path, name, sensor_type, fps, associations, start_frame_id, type)
         if sensor_type != SensorType.MONOCULAR:
@@ -306,6 +308,12 @@ class FolderDataset(Dataset):
         print("fps: ", self.fps)
         self.Ts = 1.0 / self.fps
         self.skip = 1
+        self.image_scale = float(image_scale)
+        if self.image_scale <= 0:
+            raise ValueError(f"image_scale must be positive, got {self.image_scale}")
+        self.requested_max_frames = None if max_frames is None else int(max_frames)
+        if self.requested_max_frames is not None and self.requested_max_frames <= 0:
+            raise ValueError(f"max_frames must be positive, got {self.requested_max_frames}")
         self.listing = []
         self.maxlen = 1000000
         print("Processing Image Directory Input")
@@ -314,6 +322,8 @@ class FolderDataset(Dataset):
         )  # 'name' is used for specifying a glob pattern
         self.listing.sort()
         self.listing = self.listing[:: self.skip]
+        if self.requested_max_frames is not None:
+            self.listing = self.listing[: self.requested_max_frames]
         # print('list of files: ', self.listing)
         self.maxlen = len(self.listing)
         self.num_frames = self.maxlen
@@ -327,6 +337,8 @@ class FolderDataset(Dataset):
             if not os.path.exists(timestamps_path):
                 raise FileNotFoundError(f"Timestamps file does not exist: {timestamps_path}")
             self.timestamps = self._read_timestamps(timestamps_path)
+            if self.requested_max_frames is not None:
+                self.timestamps = self.timestamps[: self.requested_max_frames]
             Printer.green("read timestamps from " + timestamps_path)
 
     def getImage(self, frame_id):
@@ -334,6 +346,14 @@ class FolderDataset(Dataset):
             return None
         image_file = self.listing[self.i]
         img = cv2.imread(image_file)
+        if img is not None and self.image_scale != 1.0:
+            img = cv2.resize(
+                img,
+                None,
+                fx=self.image_scale,
+                fy=self.image_scale,
+                interpolation=cv2.INTER_AREA,
+            )
         pattern = re.compile(r"\d+")
         if self.timestamps is not None:
             # read timestamps from timestamps file

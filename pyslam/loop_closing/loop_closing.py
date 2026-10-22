@@ -713,6 +713,10 @@ class LoopClosing:
         self.slam = slam
         self.sensor_type = slam.sensor_type
         self.is_monocular = self.sensor_type == SensorType.MONOCULAR
+        # Bag-of-words detectors compute the covisible keyframes' global descriptors from their local descriptors
+        # only: sending their images (several MB each, pickled at every keyframe) is useless memory traffic.
+        g_type = (loop_detector_config or {}).get("global_descriptor_type", None)
+        self.send_covisible_imgs = getattr(g_type, "name", None) not in ("DBOW2", "DBOW3")
 
         self.timer = TimerFps("LoopClosing", is_verbose=kTimerVerbose)
 
@@ -748,6 +752,9 @@ class LoopClosing:
         #       In order to avoid that, we use a parallel thread (same CPU core set by GIL) instead of a parallel process (different CPU core).
         #       Unfortunately, this makes things a bit slower.
         use_multiprocessing = not MultiprocessingManager.is_start_method_spawn()
+        # If loop detecting is already in thread fallback mode, avoid mp-based GBA as well.
+        if getattr(self.loop_detecting_process, "thread_mode", False):
+            use_multiprocessing = False
         self.GBA = GlobalBundleAdjustment(slam, use_multiprocessing=use_multiprocessing)
 
         self.loop_consistency_checker = LoopGroupConsistencyChecker()
@@ -904,7 +911,10 @@ class LoopClosing:
         self.loop_detecting_process.quit()
         self.GBA.quit()
         if (
-            self.loop_consistent_candidate_imgs.candidates is not None
+            (
+                self.loop_consistent_candidate_imgs is not None
+                and self.loop_consistent_candidate_imgs.candidates is not None
+            )
             or self.draw_similarity_matrix_init
         ):
             cv2.destroyAllWindows()
@@ -938,6 +948,7 @@ class LoopClosing:
                 task_type,
                 covisible_keyframes=covisible_keyframes,
                 connected_keyframes=connected_keyframes,
+                covisible_imgs=self.send_covisible_imgs,
             )
 
             self.loop_detecting_process.add_task(task)

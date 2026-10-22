@@ -24,6 +24,7 @@ import os
 import sys
 import numpy as np
 import json
+import csv
 import threading
 import warnings
 import multiprocessing
@@ -81,6 +82,166 @@ if TYPE_CHECKING:
 
 
 datetime_string = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+_mem_probe_prev_snapshot = None
+_mem_steps = {}
+
+
+def _rss_kb():
+    with open("/proc/self/statm") as f:
+        return int(f.read().split()[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024)
+
+
+def _mem_wrap_steps(slam):
+    """Accumulate the RSS change across each local-mapping step and each tracking call (PYSLAM_MEM_STEPS=1)."""
+    def wrap(obj, name, label):
+        fn = getattr(obj, name, None)
+        if fn is None:
+            return
+        def wrapped(*a, **k):
+            r0 = _rss_kb()
+            try:
+                return fn(*a, **k)
+            finally:
+                d = _mem_steps.setdefault(label, [0, 0])
+                d[0] += _rss_kb() - r0
+                d[1] += 1
+        setattr(obj, name, wrapped)
+    lm = slam.local_mapping
+    for n in ("process_new_keyframe", "cull_map_points", "create_new_map_points", "fuse_map_points", "local_BA",
+              "cull_keyframes", "cap_num_keyframes", "do_local_mapping"):
+        wrap(lm, n, "lm." + n)
+    wrap(slam.tracking, "track", "tracking.track")
+    wrap(slam.tracking, "create_new_keyframe", "tracking.create_new_keyframe")
+    if slam.loop_closing is not None:
+        wrap(slam.loop_closing, "add_keyframe", "lc.add_keyframe")
+
+
+def _mem_probe(slam, img_id):
+    """Print process RSS, map sizes and (with PYSLAM_MEM_PROBE_TRACE=1) the Python allocations that grew most."""
+    global _mem_probe_prev_snapshot
+    rss = next((l.split()[1] for l in open("/proc/self/status") if l.startswith("VmRSS")), "?")
+    info = [f"rss_mb={int(rss) // 1024 if rss != '?' else rss}"]
+    if _env_bool("PYSLAM_MEM_STEPS", default=False):
+        if not getattr(slam, "_mem_steps_wrapped", False):
+            _mem_wrap_steps(slam)
+            slam._mem_steps_wrapped = True
+        elif _mem_steps:
+            print("[MEM]   steps (MB, calls): " + ", ".join(f"{k}={v[0] // 1024}/{v[1]}" for k, v in _mem_steps.items()), flush=True)
+    for name, fn in (
+        ("kfs", lambda: slam.map.num_keyframes()),
+        ("points", lambda: slam.map.num_points()),
+        ("map_frames", lambda: len(slam.map.frames)),
+        ("lc_kf_imgs", lambda: len(slam.loop_closing.map_frame_id_to_img)),
+        ("lc_queue", lambda: slam.loop_closing.queue_size()),
+        ("lm_queue", lambda: slam.local_mapping.queue_size()),
+    ):
+        try:
+            info.append(f"{name}={fn()}")
+        except Exception:
+            pass
+    try:
+        core = next(m for n, m in sys.modules.items() if n.split(".")[-1] == "cpp_core" and hasattr(m, "live_counts"))
+        info += [f"live_{k}={v}" for k, v in core.live_counts().items()]
+    except Exception:
+        pass
+    if _env_bool("PYSLAM_MEM_PROBE_LEAKTEST", default=False) and not getattr(slam, "_mem_leaktest_done", False):
+        # repeat each access 30 times on one keyframe and report the RSS change (a leak shows a linear growth)
+        slam._mem_leaktest_done = True
+        import pickle
+        from pyslam.slam.keyframe_data import KeyFrameData
+        kf = sorted(slam.map.get_keyframes(), key=lambda k: k.kid)[-2]
+        tests = {
+            "img": lambda: kf.img, "des": lambda: kf.des, "kps": lambda: kf.kps, "points": lambda: kf.points,
+            "octaves": lambda: kf.octaves, "sizes": lambda: kf.sizes, "outliers": lambda: kf.outliers,
+            "Tcw": lambda: kf.Tcw(), "covisible": lambda: kf.get_covisible_keyframes(),
+            "KeyFrameData": lambda: KeyFrameData(kf),
+        }
+        from pyslam.loop_closing.loop_detector_base import LoopDetectorTask, LoopDetectorTaskType, LoopDetectKeyframeData
+        cov = kf.get_covisible_keyframes()
+        print(f"[MEM]   leaktest: kf {kf.kid} has {len(cov)} covisible keyframes", flush=True)
+        tests["LoopDetectKeyframeData"] = lambda: LoopDetectKeyframeData(kf)
+        tests["pickle(LoopDetectKeyframeData)"] = lambda: pickle.dumps(LoopDetectKeyframeData(kf))
+        tests["LoopDetectorTask"] = lambda: LoopDetectorTask(kf, kf.img, LoopDetectorTaskType.LOOP_CLOSURE, cov, cov)
+        tests["pickle(LoopDetectorTask)"] = lambda: pickle.dumps(
+            LoopDetectorTask(kf, kf.img, LoopDetectorTaskType.LOOP_CLOSURE, cov, cov))
+        tests["len(pickle(LoopDetectorTask)) MB"] = lambda: print(f"[MEM]   task pickle size {len(pickle.dumps(LoopDetectorTask(kf, kf.img, LoopDetectorTaskType.LOOP_CLOSURE, cov, cov))) / 2**20:.1f} MB", flush=True)
+        for name, fn in tests.items():
+            try:
+                fn()
+                r0 = _rss_kb()
+                for _ in range(30):
+                    fn()
+                print(f"[MEM]   leaktest {name}: {(_rss_kb() - r0) / 1024 / 30:.2f} MB per call", flush=True)
+            except Exception as e:
+                print(f"[MEM]   leaktest {name}: error {e}", flush=True)
+    if _env_bool("PYSLAM_MEM_PROBE_KF", default=False):
+        try:
+            kf = sorted(slam.map.get_keyframes(), key=lambda k: k.kid)[-2]
+            sizes = {}
+            for a in ("img", "img_right", "depth_img", "semantic_img", "des", "kps", "kpsu", "kpsn", "g_des"):
+                try:
+                    v = getattr(kf, a)
+                    sizes[a] = (getattr(v, "shape", None), getattr(v, "nbytes", None))
+                except Exception as e:
+                    sizes[a] = repr(e)[:40]
+            print(f"[MEM]   kf {kf.kid}: {sizes}", flush=True)
+        except Exception as e:
+            print(f"[MEM]   kf probe failed: {e}", flush=True)
+    import tracemalloc
+    if tracemalloc.is_tracing():
+        cur, _ = tracemalloc.get_traced_memory()
+        info.append(f"py_traced_mb={cur // 2**20}")
+    if _env_bool("PYSLAM_MEM_PROBE_TRIM", default=False):
+        # RSS after giving freed heap pages back to the OS: a large drop means allocator fragmentation, not a leak
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        rss = next((l.split()[1] for l in open("/proc/self/status") if l.startswith("VmRSS")), "?")
+        info.append(f"rss_after_trim_mb={int(rss) // 1024 if rss != '?' else rss}")
+    print(f"[MEM] frame {img_id} " + " ".join(info), flush=True)
+    if _env_bool("PYSLAM_MEM_PROBE_ARRAYS", default=False):
+        # numpy arrays reachable from gc-tracked containers, grouped by (shape[1:], dtype) and referrer type
+        import gc
+        from collections import Counter
+        seen, tot, by_kind = set(), 0, Counter()
+        for o in gc.get_objects():
+            for r in gc.get_referents(o):
+                if isinstance(r, np.ndarray) and id(r) not in seen and r.base is None:
+                    seen.add(id(r))
+                    tot += r.nbytes
+                    by_kind[(type(o).__name__, r.shape[1:] if r.ndim > 1 else (), str(r.dtype))] += r.nbytes
+        print(f"[MEM]   numpy reachable: {tot // 2**20} MB in {len(seen)} arrays", flush=True)
+        for k, v in by_kind.most_common(8):
+            print(f"[MEM]     {v // 2**20} MB  holder={k[0]} shape=(*,{k[1]}) dtype={k[2]}", flush=True)
+        types = Counter(type(o).__name__ for o in gc.get_objects())
+        print("[MEM]   gc objects: " + ", ".join(f"{k}={v}" for k, v in types.most_common(12)), flush=True)
+    if tracemalloc.is_tracing():
+        snap = tracemalloc.take_snapshot()
+        if _mem_probe_prev_snapshot is not None:
+            for st in snap.compare_to(_mem_probe_prev_snapshot, "traceback")[:6]:
+                print(f"[MEM]   +{st.size_diff // 2**20} MB ({st.count_diff:+d} blocks) at "
+                      + " <- ".join(f"{f.filename.split('/pyslam/')[-1]}:{f.lineno}" for f in st.traceback[:4]), flush=True)
+        _mem_probe_prev_snapshot = snap
+
+
+def _tracking_state_to_health_label(state):
+    if state == SlamState.OK:
+        return "OK"
+    if state == SlamState.LOST:
+        return "LOST"
+    if state == SlamState.RELOCALIZE:
+        return "RELOCALIZING"
+    if state in (SlamState.NOT_INITIALIZED, SlamState.NO_IMAGES_YET, SlamState.INIT_RELOCALIZE):
+        return "INIT"
+    return state.name
 
 
 def draw_associated_cameras(viewer3D, assoc_est_poses, assoc_gt_poses, T_gt_est):
@@ -159,12 +320,12 @@ if __name__ == "__main__":
     # Select your tracker configuration (see the file feature_tracker_configs.py)
     # FeatureTrackerConfigs: SHI_TOMASI_ORB, FAST_ORB, ORB, ORB2, ORB2_FREAK, ORB2_BEBLID, BRISK, AKAZE, FAST_FREAK, SIFT, ROOT_SIFT, SURF, KEYNET, SUPERPOINT, CONTEXTDESC, LIGHTGLUE, XFEAT, XFEAT_XFEAT
     # WARNING: At present, SLAM does not support LOFTR and other "pure" image matchers (further details in the commenting notes about LOFTR in feature_tracker_configs.py).
-    feature_tracker_config = FeatureTrackerConfigs.ORB2
+    feature_tracker_config = FeatureTrackerConfigs.LIGHTGLUESIFT
 
     # Select your loop closing configuration (see the file loop_detector_configs.py). Set it to None to disable loop closing.
     # LoopDetectorConfigs: DBOW2, DBOW2_INDEPENDENT, DBOW3, DBOW3_INDEPENDENT, IBOW, OBINDEX2, VLAD, HDC_DELF, SAD, ALEXNET, NETVLAD, COSPLACE, EIGENPLACES, MEGALOC  etc.
     # NOTE: under mac, the boost/text deserialization used by DBOW2 and DBOW3 may be very slow.
-    loop_detection_config = LoopDetectorConfigs.DBOW3
+    loop_detection_config = LoopDetectorConfigs.OBINDEX2
 
     # Select your semantic mapping configuration (see the file semantic_mapping_configs.py). Set it to None to disable semantic mapping.
     semantic_mapping_config = (
@@ -192,6 +353,21 @@ if __name__ == "__main__":
         feature_tracker_config["num_features"] = (
             config.num_features_to_extract
         )  # Override the number of features from the `settings` file
+    # Optional LightGlue matcher overrides from settings.
+    if "LightGlue.n_layers" in config.system_settings:
+        feature_tracker_config["lightglue_n_layers"] = config.system_settings["LightGlue.n_layers"]
+    if "LightGlue.filter_threshold" in config.system_settings:
+        feature_tracker_config["lightglue_filter_threshold"] = config.system_settings[
+            "LightGlue.filter_threshold"
+        ]
+    if "LightGlue.depth_confidence" in config.system_settings:
+        feature_tracker_config["lightglue_depth_confidence"] = config.system_settings[
+            "LightGlue.depth_confidence"
+        ]
+    if "LightGlue.width_confidence" in config.system_settings:
+        feature_tracker_config["lightglue_width_confidence"] = config.system_settings[
+            "LightGlue.width_confidence"
+        ]
     if (
         config.loop_detection_config_name is not None
     ):  # Check if we set `LoopDetectorConfig.name` in the `settings` file
@@ -300,9 +476,24 @@ if __name__ == "__main__":
     key_cv = None
 
     num_tracking_lost = 0
+    num_consecutive_lost = 0
+    # optional early stop: end the run (trajectory still saved) after N consecutive LOST frames, 0 = disabled
+    stop_after_lost_frames = int(os.environ.get("PYSLAM_STOP_AFTER_LOST_FRAMES", "0"))
     num_frames = 0
+    export_frame_logs = _env_bool("PYSLAM_EXPORT_FRAME_LOGS", default=False)
+    # optional memory diagnostics every N frames (0 = disabled), see _mem_probe
+    mem_probe_every = int(os.environ.get("PYSLAM_MEM_PROBE", "0"))
+    if mem_probe_every > 0 and _env_bool("PYSLAM_MEM_PROBE_TRACE", default=False):
+        import tracemalloc
+        tracemalloc.start(8)
+    frame_log_rows = []
+    run_start_time = time.time()
 
     img_id = 0  # 210, 340, 400, 770   # you can start from a desired frame id if needed
+
+    exit_code = 0
+    run_exception = None
+    run_traceback = None
 
     try:
         while not is_viewer_closed:
@@ -359,6 +550,39 @@ if __name__ == "__main__":
 
                         slam.track(img, img_right, depth, img_id, timestamp)  # main SLAM function
 
+                        if export_frame_logs:
+                            num_matches = slam.tracking.num_matched_kps
+                            num_inliers = slam.tracking.num_inliers
+                            num_tracked_features = slam.tracking.num_matched_map_points
+                            n_keypoints = None
+                            if slam.tracking.f_cur is not None and hasattr(slam.tracking.f_cur, "kps"):
+                                try:
+                                    n_keypoints = len(slam.tracking.f_cur.kps)
+                                except Exception:
+                                    n_keypoints = None
+                            inlier_ratio = None
+                            if (
+                                num_inliers is not None
+                                and num_matches is not None
+                                and num_matches > 0
+                            ):
+                                inlier_ratio = float(num_inliers) / float(num_matches)
+                            frame_log_rows.append(
+                                {
+                                    "frame_idx": img_id,
+                                    "timestamp": timestamp,
+                                    "n_keypoints": n_keypoints,
+                                    "n_tracked_features": num_tracked_features,
+                                    "n_matches": num_matches,
+                                    "n_inliers": num_inliers,
+                                    "inlier_ratio": inlier_ratio,
+                                    "tracking_state": _tracking_state_to_health_label(
+                                        slam.tracking.state
+                                    ),
+                                    "note": "",
+                                }
+                            )
+
                         # 3D display (map display)
                         if viewer3D:
                             viewer3D.draw_slam_map(slam)
@@ -393,6 +617,8 @@ if __name__ == "__main__":
 
                     img_id += 1
                     num_frames += 1
+                    if mem_probe_every > 0 and num_frames % mem_probe_every == 0:
+                        _mem_probe(slam, img_id)
                 else:
                     time.sleep(0.1)  # img is None
                     # Printer.yellow("sleeping for 0.1 seconds - img is None")
@@ -423,6 +649,13 @@ if __name__ == "__main__":
 
             if slam.tracking.state == SlamState.LOST:
                 num_tracking_lost += 1
+            if slam.tracking.state in (SlamState.LOST, SlamState.RELOCALIZE):
+                num_consecutive_lost += 1
+            else:
+                num_consecutive_lost = 0
+            if stop_after_lost_frames > 0 and num_consecutive_lost >= stop_after_lost_frames:
+                Printer.yellow(f"\nTracking lost for {num_consecutive_lost} consecutive frames (frame {img_id}): stopping run.\n")
+                break
 
             # manage interface infos
             if is_map_save:
@@ -474,9 +707,16 @@ if __name__ == "__main__":
                 break
 
     except KeyboardInterrupt:
-        Printer.yellow("\nCTRL+C detected. Shutting down ...\n")
-        force_kill_all_and_exit(verbose=False)
-        sys.exit(0)
+        run_exception = KeyboardInterrupt("CTRL+C detected")
+        run_traceback = "KeyboardInterrupt"
+        exit_code = 130
+        Printer.yellow("\nCTRL+C detected. Stopping current run ...\n")
+    except Exception as e:
+        run_exception = e
+        run_traceback = traceback.format_exc()
+        exit_code = 1
+        Printer.red(f"\nUnhandled exception in main loop: {e}")
+        print(run_traceback)
 
     # exit from the main loop
 
@@ -485,6 +725,7 @@ if __name__ == "__main__":
         online_trajectory_writer.close_file()
 
     # compute metrics on the estimated final trajectory
+    metrics_exception = None
     try:
         est_poses, timestamps, ids = slam.get_final_trajectory()
         is_final = not dataset.is_ok
@@ -506,18 +747,47 @@ if __name__ == "__main__":
             final_trajectory_writer.write_full_trajectory(est_poses, timestamps)
             final_trajectory_writer.close_file()
 
-        other_metrics_file_path = os.path.join(metrics_save_dir, "other_metrics_info.txt")
-        with open(other_metrics_file_path, "w") as f:
-            f.write(f"num_total_frames: {num_total_frames}\n")
-            f.write(f"num_processed_frames: {num_frames}\n")
-            f.write(f"num_lost_frames: {num_tracking_lost}\n")
-            f.write(f"percent_lost: {num_tracking_lost/num_total_frames*100:.2f}\n")
-
         evaluate_semantic_mapping(slam, dataset, metrics_save_dir)
 
     except Exception as e:
+        metrics_exception = e
         print("Exception while computing metrics: ", e)
         print(f"traceback: {traceback.format_exc()}")
+    finally:
+        if metrics_save_dir is not None:
+            other_metrics_file_path = os.path.join(metrics_save_dir, "other_metrics_info.txt")
+            runtime_seconds = time.time() - run_start_time
+            with open(other_metrics_file_path, "w") as f:
+                f.write(f"num_total_frames: {num_total_frames}\n")
+                f.write(f"num_processed_frames: {num_frames}\n")
+                f.write(f"num_lost_frames: {num_tracking_lost}\n")
+                f.write(f"percent_lost: {num_tracking_lost/num_total_frames*100:.2f}\n")
+                f.write(f"runtime_seconds: {runtime_seconds:.6f}\n")
+                if run_exception is not None:
+                    f.write(f"run_exception: {type(run_exception).__name__}\n")
+                    f.write(f"run_exception_message: {str(run_exception)}\n")
+                if metrics_exception is not None:
+                    f.write(f"metrics_exception: {type(metrics_exception).__name__}\n")
+
+        if export_frame_logs and metrics_save_dir is not None:
+            frame_log_path = os.path.join(metrics_save_dir, "frame_log.csv")
+            with open(frame_log_path, "w", newline="", encoding="utf-8") as frame_log_file:
+                writer = csv.DictWriter(
+                    frame_log_file,
+                    fieldnames=[
+                        "frame_idx",
+                        "timestamp",
+                        "n_keypoints",
+                        "n_tracked_features",
+                        "n_matches",
+                        "n_inliers",
+                        "inlier_ratio",
+                        "tracking_state",
+                        "note",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerows(frame_log_rows)
 
     # close stuff - ensure proper shutdown order
     # First stop SLAM (which stops all processes and shuts down their managers)
@@ -541,9 +811,13 @@ if __name__ == "__main__":
     time.sleep(1.0)
 
     if args.headless:
-        force_kill_all_and_exit(verbose=False)  # just in case when running an evaluation
+        force_kill_all_and_exit(
+            code=exit_code, verbose=False
+        )  # just in case when running an evaluation
     else:
         if platform.system() == "Darwin" or mp.get_start_method() == "spawn":
             # HACK
             time.sleep(5.0)
-            force_kill_all_and_exit(verbose=True)  # debug
+            force_kill_all_and_exit(code=exit_code, verbose=True)  # debug
+
+    sys.exit(exit_code)

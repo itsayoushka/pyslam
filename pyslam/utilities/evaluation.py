@@ -19,15 +19,21 @@
 
 import json
 import os
+
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import evo
 import numpy as np
 
 from evo.core import metrics, trajectory
 from evo.core.metrics import PoseRelation, Unit
 from evo.core.trajectory import PosePath3D, PoseTrajectory3D
+from evo.tools.settings import SETTINGS
+
+SETTINGS.plot_backend = "Agg"
+
 from evo.tools import plot
 from evo.tools.plot import PlotMode
-from evo.tools.settings import SETTINGS
 from matplotlib import pyplot as plt
 
 from errno import EEXIST
@@ -48,13 +54,51 @@ def mkdir_p(folder_path):
             raise
 
 
+def _parse_plot_formats(plot_formats):
+    if plot_formats is None:
+        plot_formats = os.environ.get("PYSLAM_EVAL_PLOT_FORMATS", "png")
+    if isinstance(plot_formats, str):
+        values = [x.strip().lower() for x in plot_formats.split(",") if x.strip()]
+    elif isinstance(plot_formats, (list, tuple)):
+        values = [str(x).strip().lower() for x in plot_formats if str(x).strip()]
+    else:
+        values = []
+    if not values:
+        values = ["png"]
+    return list(dict.fromkeys(values))
+
+
+def _augment_stats_with_series_and_quantiles(stats, series, prefix=""):
+    stats = dict(stats)
+    if series is None:
+        return stats
+    series = np.asarray(series, dtype=np.float64)
+    if series.size == 0:
+        return stats
+    q25 = float(np.quantile(series, 0.25))
+    q75 = float(np.quantile(series, 0.75))
+    stats[f"{prefix}iqr"] = q75 - q25
+    stats[f"{prefix}p90"] = float(np.quantile(series, 0.90))
+    stats[f"{prefix}p95"] = float(np.quantile(series, 0.95))
+    stats[f"{prefix}error_series"] = series.tolist()
+    return stats
+
+
 # Evaluate the estimated poses against the ground truth poses and save/plot the results.
 # Returns the RMSE ATE and the EVO stats
 # Inputs: poses_est: List of estimated poses, each on a [4x4] transformation matrix
 #         poses_gt: List of ground truth poses, each on a [4x4] transformation matrix
 #         is_monocular: True if the camera is monocular
 def evaluate_evo(
-    poses_est, poses_gt, is_monocular, plot_dir, label, save_metrics=True, save_plot=True
+    poses_est,
+    poses_gt,
+    is_monocular,
+    plot_dir,
+    label,
+    save_metrics=True,
+    save_plot=True,
+    plot_formats=None,
+    rpe_delta_frames=1,
 ):
 
     if len(poses_est) == 0 or len(poses_gt) == 0:
@@ -76,6 +120,34 @@ def evaluate_evo(
         ape_metric.process_data(data)
         ape_stat = ape_metric.get_statistic(metrics.StatisticsType.rmse)
         ape_stats = ape_metric.get_all_statistics()
+        ape_stats = _augment_stats_with_series_and_quantiles(ape_stats, ape_metric.error)
+        ape_stats["align_type"] = "Sim3_UMeyama" if is_monocular else "SE3_UMeyama"
+
+        try:
+            rpe_kwargs = {
+                "delta": rpe_delta_frames,
+                "delta_unit": Unit.frames,
+                "all_pairs": False,
+            }
+            rpe_trans_metric = metrics.RPE(PoseRelation.translation_part, **rpe_kwargs)
+            rpe_trans_metric.process_data(data)
+            rpe_trans_stats = _augment_stats_with_series_and_quantiles(
+                rpe_trans_metric.get_all_statistics(),
+                rpe_trans_metric.error,
+            )
+
+            rpe_rot_metric = metrics.RPE(PoseRelation.rotation_angle_rad, **rpe_kwargs)
+            rpe_rot_metric.process_data(data)
+            rpe_rot_stats = _augment_stats_with_series_and_quantiles(
+                rpe_rot_metric.get_all_statistics(),
+                rpe_rot_metric.error,
+            )
+
+            ape_stats.update({f"rpe_trans_{k}": v for k, v in rpe_trans_stats.items()})
+            ape_stats.update({f"rpe_rot_{k}": v for k, v in rpe_rot_stats.items()})
+            ape_stats["rpe_delta_frames"] = int(rpe_delta_frames)
+        except Exception as e:
+            Printer.yellow(f"[evaluate_evo] RPE stats not available: {e}")
         # Printer.green(f"RMSE ATE {ape_stat} [m]")
         # Printer.green(f"EVO stats: {json.dumps(ape_stats, indent=4)}")
 
@@ -95,6 +167,7 @@ def evaluate_evo(
             )  # This backend does not require a display and is suitable for saving figures to files without displaying them.
 
             plot_modes = [PlotMode.xy, PlotMode.yz, PlotMode.xyz]
+            out_formats = _parse_plot_formats(plot_formats)
             for plot_mode in plot_modes:
                 fig = plt.figure()
                 ax = evo.tools.plot.prepare_axis(fig, plot_mode)
@@ -110,10 +183,14 @@ def evaluate_evo(
                 )
                 ax.legend()
 
-                target_plot_filename = os.path.join(
-                    plot_dir, f"evo_2dplot_{label}_{plot_mode.name}.png"
-                )
-                plt.savefig(target_plot_filename, dpi=90)
+                for out_format in out_formats:
+                    target_plot_filename = os.path.join(
+                        plot_dir, f"evo_2dplot_{label}_{plot_mode.name}.{out_format}"
+                    )
+                    if out_format in ("png", "jpg", "jpeg"):
+                        plt.savefig(target_plot_filename, dpi=90, format=out_format)
+                    else:
+                        plt.savefig(target_plot_filename, format=out_format)
                 plt.close(fig)  # Close the figure to free up memory
 
             Printer.green(f"Saved EVO plot to {target_plot_filename}")
@@ -142,6 +219,7 @@ def eval_ate(
     save_dir=None,
     save_metrics=True,
     save_plot=True,
+    plot_formats=None,
 ):
     if save_dir is None:
         save_metrics = False
@@ -175,6 +253,7 @@ def eval_ate(
         label=label_evo,
         save_metrics=save_metrics,
         save_plot=save_plot,
+        plot_formats=plot_formats,
     )
     if ape_stats is not None:
         trj_data["ate"] = ape_stats["rmse"]

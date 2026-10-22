@@ -16,6 +16,7 @@
 * You should have received a copy of the GNU General Public License
 * along with PYSLAM. If not, see <http://www.gnu.org/licenses/>.
 """
+from __future__ import annotations
 
 import os
 import time
@@ -39,7 +40,7 @@ from .loop_detector_vocabulary import VocabularyData
 
 import pyslam.config as config
 
-config.cfg.set_lib("pydbow3")
+config.cfg.set_lib("pydbow3", prepend=True)
 import pydbow3 as dbow3
 
 

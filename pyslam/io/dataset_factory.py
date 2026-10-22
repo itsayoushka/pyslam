@@ -154,6 +154,12 @@ def dataset_factory(config: "Config") -> Dataset:
         fps = 10  # a default value
         if "fps" in dataset_settings:
             fps = int(dataset_settings["fps"])
+        image_scale = float(dataset_settings.get("image_scale", 1.0))
+        max_frames = dataset_settings.get("max_frames", None)
+        if max_frames is not None:
+            max_frames = int(max_frames)
+            if max_frames <= 0:
+                max_frames = None
         dataset = FolderDataset(
             path,
             name,
@@ -163,6 +169,8 @@ def dataset_factory(config: "Config") -> Dataset:
             timestamps,
             start_frame_id,
             DatasetType.FOLDER,
+            image_scale,
+            max_frames,
         )
     if type == "live":
         dataset = LiveDataset(

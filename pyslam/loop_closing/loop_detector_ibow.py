@@ -42,7 +42,7 @@ from .loop_detector_base import (
 
 import pyslam.config as config
 
-config.cfg.set_lib("pyibow")
+config.cfg.set_lib("pyibow", prepend=True)
 import pyibow as ibow
 
 

@@ -221,8 +221,10 @@ class Config:
         self.global_parameters = self.config["GLOBAL_PARAMETERS"]
         if self.global_parameters is not None:
             Printer.orange("[Config] Setting global parameters: ", self.global_parameters)
-            from pyslam.config_parameters import Parameters, set_from_dict
+            from pyslam.config_parameters import Parameters, set_from_dict, reset_to_defaults
 
+            # Reset to class defaults first so no parameter leaks from a previous run.
+            reset_to_defaults(Parameters)
             set_from_dict(Parameters, self.global_parameters)
 
     def get_ros_bag_settings(self):

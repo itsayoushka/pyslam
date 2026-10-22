@@ -72,7 +72,7 @@ class LoopDetectorTaskType(Enum):
 
 # keyframe (picklable) data that are needed for loop detection
 class LoopDetectKeyframeData:
-    def __init__(self, keyframe: KeyFrame = None, img=None):
+    def __init__(self, keyframe: KeyFrame = None, img=None, include_img=True):
         # keyframe data
         self.id = keyframe.id if keyframe is not None else -1
         self.kps = keyframe.kps if keyframe is not None else []
@@ -81,7 +81,7 @@ class LoopDetectKeyframeData:
         self.octaves = keyframe.octaves if keyframe is not None else []
         self.des = keyframe.des if keyframe is not None else []
 
-        self.img = img if img is not None else (keyframe.img if keyframe is not None else None)
+        self.img = img if img is not None else (keyframe.img if keyframe is not None and include_img else None)
 
         # NOTE: The kid is not actually used for the processing in this whole file
         if isinstance(keyframe, KeyFrame):
@@ -101,6 +101,7 @@ class LoopDetectorTask:
         covisible_keyframes=None,
         connected_keyframes=None,
         load_save_path=None,
+        covisible_imgs=True,
     ):
         if covisible_keyframes is None:
             covisible_keyframes = []
@@ -110,7 +111,7 @@ class LoopDetectorTask:
         self.task_type = task_type
         self.keyframe_data = LoopDetectKeyframeData(keyframe, img)
         self.covisible_keyframes_data = [
-            LoopDetectKeyframeData(kf)
+            LoopDetectKeyframeData(kf, include_img=covisible_imgs)
             for kf in covisible_keyframes
             if not kf.is_bad() and kf.id != self.keyframe_data.id
         ]

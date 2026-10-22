@@ -546,6 +546,17 @@ class FeatureMatcher:
             scales2 = None
             oris1 = None
             oris2 = None
+            # Optional metadata provided by callers when keypoints are passed as Nx2 arrays.
+            # This is especially relevant for LightGlue SIFT mode.
+            if data is not None:
+                if "scales1" in data and data["scales1"] is not None:
+                    scales1 = np.asarray(data["scales1"], dtype=np.float32)
+                if "scales2" in data and data["scales2"] is not None:
+                    scales2 = np.asarray(data["scales2"], dtype=np.float32)
+                if "oris1" in data and data["oris1"] is not None:
+                    oris1 = np.asarray(data["oris1"], dtype=np.float32)
+                if "oris2" in data and data["oris2"] is not None:
+                    oris2 = np.asarray(data["oris2"], dtype=np.float32)
             if kps1 is None and kps2 is None:
                 Printer.red("ERROR: FeatureMatcher.match: kps1 and kps2 are None")
                 return result
@@ -566,6 +577,18 @@ class FeatureMatcher:
                     kps2 = np.array([x.pt for x in kps2], dtype=np.float32)
                     if kVerbose:
                         print("kps2.shape:", kps2.shape, " kps2.dtype:", kps2.dtype)
+            # For LIGHTGLUESIFT we must always provide scales/oris to LightGlue.
+            # Frame stores keypoints as Nx2 arrays, so when this metadata is unavailable
+            # we fall back to neutral values to keep matching operational.
+            if self.detector_type == FeatureDetectorTypes.LIGHTGLUESIFT:
+                if scales1 is None:
+                    scales1 = np.ones((kps1.shape[0],), dtype=np.float32)
+                if oris1 is None:
+                    oris1 = np.zeros((kps1.shape[0],), dtype=np.float32)
+                if scales2 is None:
+                    scales2 = np.ones((kps2.shape[0],), dtype=np.float32)
+                if oris2 is None:
+                    oris2 = np.zeros((kps2.shape[0],), dtype=np.float32)
             if kVerbose:
                 print(f"image1.shape: {img1.shape}, image2.shape: {img2.shape}")
             img1_shape = img1.shape[0:2]
@@ -923,9 +946,14 @@ class LightGlueMatcher(FeatureMatcher):
             detector_type=detector_type,
             descriptor_type=descriptor_type,
         )
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "LightGlueMatcher requires CUDA for this setup. "
+                "CUDA is not available, aborting instead of running on CPU."
+            )
+        device = torch.device("cuda")
         self.torch_device = device
-        if self.torch_device == "cuda":
+        if self.torch_device.type == "cuda":
             LightGlue.pruning_keypoint_thresholds["cuda"]
         features_string = None
         if detector_type == FeatureDetectorTypes.SUPERPOINT:
@@ -938,7 +966,30 @@ class LightGlueMatcher(FeatureMatcher):
             features_string = "sift"
         else:
             raise ValueError(f"LightGlue: Unmanaged detector type: {detector_type.name}")
-        self.matcher = LightGlue(features=features_string, n_layers=2).eval().to(device)
+        n_layers = int(kwargs.get("lightglue_n_layers", 2))
+        filter_threshold = kwargs.get("lightglue_filter_threshold", None)
+        depth_confidence = kwargs.get("lightglue_depth_confidence", None)
+        width_confidence = kwargs.get("lightglue_width_confidence", None)
+
+        matcher_kwargs = {"features": features_string, "n_layers": n_layers}
+        if filter_threshold is not None:
+            matcher_kwargs["filter_threshold"] = float(filter_threshold)
+        if depth_confidence is not None:
+            matcher_kwargs["depth_confidence"] = float(depth_confidence)
+        if width_confidence is not None:
+            matcher_kwargs["width_confidence"] = float(width_confidence)
+
+        try:
+            self.matcher = LightGlue(**matcher_kwargs).eval()
+        except TypeError as e:
+            Printer.yellow(
+                f"LightGlue optional kwargs not supported by installed version ({e}); "
+                f"falling back to features+n_layers only."
+            )
+            self.matcher = LightGlue(features=features_string, n_layers=n_layers).eval()
+
+        # Intentionally fail fast on CUDA issues (including OOM) to avoid slow CPU fallback.
+        self.matcher = self.matcher.to(device)
         self.matcher_name = "LightGlueFeatureMatcher"
         print("device: ", self.torch_device)
         Printer.green(f"matcher: {self.matcher_name}")

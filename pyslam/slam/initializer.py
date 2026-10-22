@@ -65,7 +65,6 @@ kNumOfFailuresAfterWichNumMinTriangulatedPointsIsReduced = 10
 
 kMaxLenFrameDeque = kMaxIdDistBetweenIntializingFrames + 1
 
-
 class InitializerOutput(object):
     def __init__(self):
         self.pts = None  # 3d points [Nx3]
@@ -116,25 +115,44 @@ class Initializer(object):
     # N.B.4: as reported above, in case of pure rotation, this algorithm will compute a useless fundamental matrix which cannot be decomposed to return the rotation
     # N.B.5: the OpenCV findEssentialMat function uses the five-point algorithm solver by D. Nister => hence it should work well in the degenerate planar cases
     def estimatePose(self, kpn_ref, kpn_cur):
+        # OpenCV recoverPose expects contiguous point buffers (Nx2).
+        # Some upstream slicing/indexing can yield non-contiguous arrays.
+        kpn_ref = np.ascontiguousarray(np.asarray(kpn_ref, dtype=np.float64).reshape(-1, 2))
+        kpn_cur = np.ascontiguousarray(np.asarray(kpn_cur, dtype=np.float64).reshape(-1, 2))
+
         ransac_method = None
         try:
             ransac_method = cv2.USAC_MAGSAC
         except:
             ransac_method = cv2.RANSAC
-        # here, the essential matrix algorithm uses the five-point algorithm solver by D. Nister (see the notes and paper above )
-        E, self.mask_match = cv2.findEssentialMat(
-            kpn_cur,
-            kpn_ref,
-            focal=1,
-            pp=(0.0, 0.0),
-            method=ransac_method,
-            prob=kRansacProb,
-            threshold=kRansacThresholdNormalized,
-        )
-        _, R, t, mask = cv2.recoverPose(E, kpn_cur, kpn_ref, focal=1, pp=(0.0, 0.0))
-        return poseRt(
-            R, t.T
-        )  # Trc  homogeneous transformation matrix with respect to 'ref' frame,  pr_= Trc * pc_
+        # here, the essential matrix algorithm uses the five-point algorithm solver by D. Nister
+        try:
+            E, self.mask_match = cv2.findEssentialMat(
+                kpn_cur,
+                kpn_ref,
+                focal=1,
+                pp=(0.0, 0.0),
+                method=ransac_method,
+                prob=kRansacProb,
+                threshold=kRansacThresholdNormalized,
+            )
+            if E is None:
+                return None
+            E = np.asarray(E, dtype=np.float64)
+            if E.ndim != 2 or E.shape[1] != 3 or E.shape[0] < 3:
+                return None
+            if E.shape != (3, 3):
+                # USAC/Nister can return stacked solutions (3n x 3). Keep first valid one.
+                E = E[:3, :3]
+            E = np.ascontiguousarray(E)
+
+            _, R, t, mask = cv2.recoverPose(E, kpn_cur, kpn_ref, focal=1, pp=(0.0, 0.0))
+            return poseRt(
+                R, t.T
+            )  # Trc homogeneous transformation matrix w.r.t ref frame
+        except cv2.error as e:
+            Printer.yellow(f"Initializer: recoverPose failed with OpenCV error: {e}")
+            return None
 
     def check_num_failures(self):
         if self.num_failures > kNumOfFailuresAfterWichNumMinTriangulatedPointsIsReduced:
@@ -292,6 +310,10 @@ class Initializer(object):
             return out, is_ok
 
         Trc = self.estimatePose(kpsn_ref, kpsn_cur)
+        if Trc is None:
+            Printer.yellow("Initializer: pose estimation failed, retrying with next frame pair")
+            self.num_failures += 1
+            return out, is_ok
         Tcr = inv_T(Trc)  # Tcr w.r.t. ref frame
         f_ref.update_pose(np.eye(4))
         f_cur.update_pose(Tcr)

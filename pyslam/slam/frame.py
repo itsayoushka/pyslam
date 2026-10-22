@@ -1607,7 +1607,19 @@ def are_map_points_visible(
 # out: a vector of match index pairs [idx1[i],idx2[i]] such that the keypoint f1.kps[idx1[i]] is matched with f2.kps[idx2[i]]
 def match_frames(f1: Frame, f2: Frame, ratio_test=None):
     matching_result = FeatureTrackerShared.feature_matcher.match(
-        f1.img, f2.img, f1.des, f2.des, kps1=f1.kps, kps2=f2.kps, ratio_test=ratio_test
+        f1.img,
+        f2.img,
+        f1.des,
+        f2.des,
+        kps1=f1.kps,
+        kps2=f2.kps,
+        ratio_test=ratio_test,
+        data={
+            "scales1": f1.sizes,
+            "oris1": f1.angles,
+            "scales2": f2.sizes,
+            "oris2": f2.angles,
+        },
     )
     return matching_result
 
@@ -1676,6 +1688,12 @@ def compute_frame_matches_threading(
                 kps1=kf1.kps,
                 kps2=kf2.kps,
                 ratio_test=ratio_test,
+                data={
+                    "scales1": kf1.sizes,
+                    "oris1": kf1.angles,
+                    "scales2": kf2.sizes,
+                    "oris2": kf2.angles,
+                },
             )
             idxs1, idxs2 = matching_result.idxs1, matching_result.idxs2
             # Convert to numpy arrays only once, avoid unnecessary copies

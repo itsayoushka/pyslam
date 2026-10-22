@@ -41,6 +41,7 @@ class Parameters:
     # ================================================================
     # Folder where logs are stored. This can be changed by pyslam/config.py to redirect the logs in a different folder.
     kLogsFolder = kRootFolder + "/logs"
+    kStoreKeyFrameImages = True  # Store full keyframe images; disable in headless benchmarks to reduce memory.
 
     # ================================================================
     # Sparse SLAM
@@ -105,10 +106,13 @@ class Parameters:
     kMinNumMatchedFeaturesSearchFrameByProjection = (
         20  # If the number of tracked features is below this, then the search fails
     )
+    kMaxFramesBetweenKeyFramesAfterRelocalization = -1  # [frames] Use -1 to fall back to fps-based cooldown after relocalization
     kUseEssentialMatrixFitting = False  # Fit an essential matrix; orientation and keypoint match inliers are estimated by fitting an essential mat (5 points algorithm),
     # WARNING: essential matrix fitting comes with some limitations (please, read the comments of the method slam.estimate_pose_ess_mat())
     kMinNumMatchedFeaturesSearchReferenceFrame = 15
     kMaxNumOfKeyframesInLocalMap = 80
+    kMinFramesBetweenKeyFrames = 0
+    kMaxNumKeyFramesInMap = 0  # [keyframes] > 0: cap the map size, the oldest keyframes are removed (bounded memory); 0 = no cap
     kNumBestCovisibilityKeyFrames = 10
     kUseVisualOdometryPoints = True
     kMaxNumVisualOdometryPoints = 100
@@ -152,6 +156,10 @@ class Parameters:
     kMaxReprojectionDistanceMap = 3  # [pixels]    o:1
     kMaxReprojectionDistanceMapRgbd = 3  # [pixels]    o:3
     kMaxReprojectionDistanceMapReloc = 5  # [pixels]    o:5
+    # Tracking robustness thresholds (can be overridden from evaluation GLOBAL_PARAMETERS)
+    kNumMinInliersPoseOptimizationTrackFrame = 10
+    kNumMinInliersPoseOptimizationTrackLocalMap = 20
+    kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle = 50
     kMaxReprojectionDistanceFuse = 3  # [pixels]    o:3
     kMaxReprojectionDistanceSim3 = 7.5  # [pixels]    o:7.5
     #
@@ -435,6 +443,20 @@ class Parameters:
     )
 
 
+def _collect_parameter_attributes(cls):
+    out = {}
+    for key, value in cls.__dict__.items():
+        if key.startswith("__"):
+            continue
+        if callable(value):
+            continue
+        out[key] = value
+    return out
+
+
+_PARAMETERS_DEFAULTS = _collect_parameter_attributes(Parameters)
+
+
 # ================================================================
 # Set and get parameters from/to a dictionary
 # ================================================================
@@ -447,6 +469,11 @@ def set_from_dict(cls, config):
             setattr(cls, key, value)
         else:
             print(f"Unknown config key: {key}")
+
+
+def reset_to_defaults(cls):
+    for key, value in _PARAMETERS_DEFAULTS.items():
+        setattr(cls, key, value)
 
 
 def to_dict(cls):

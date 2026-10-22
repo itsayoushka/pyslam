@@ -1153,7 +1153,18 @@ def _search_frame_for_triangulation(
         timerMatch = Timer()
         timerMatch.start()
         matching_result = FeatureTrackerShared.feature_matcher.match(
-            kf1.img, kf2.img, kf1.des, kf2.des
+            kf1.img,
+            kf2.img,
+            kf1.des,
+            kf2.des,
+            kps1=kf1.kps,
+            kps2=kf2.kps,
+            data={
+                "scales1": kf1.sizes,
+                "oris1": kf1.angles,
+                "scales2": kf2.sizes,
+                "oris2": kf2.angles,
+            },
         )
         idxs1, idxs2 = matching_result.idxs1, matching_result.idxs2
         if __debug__:

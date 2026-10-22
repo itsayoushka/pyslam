@@ -99,11 +99,15 @@ kUseDynamicDesDistanceTh = Parameters.kUseDynamicDesDistanceTh
 
 kUseGroundTruthScale = False
 
-kNumMinInliersPoseOptimizationTrackFrame = 10
-kNumMinInliersPoseOptimizationTrackLocalMap = 20
-kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle = (
-    50  # 60  # defines bad/weak tracking condition
+kNumMinInliersPoseOptimizationTrackFrame = (
+    Parameters.kNumMinInliersPoseOptimizationTrackFrame
 )
+kNumMinInliersPoseOptimizationTrackLocalMap = (
+    Parameters.kNumMinInliersPoseOptimizationTrackLocalMap
+)
+kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle = (
+    Parameters.kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle
+)  # defines bad/weak tracking condition
 
 
 kUseMotionModel = Parameters.kUseMotionModel or Parameters.kUseSearchFrameByProjection
@@ -172,9 +176,11 @@ class Tracking:
 
         self.max_frames_between_kfs = int(slam.camera.fps) if slam.camera.fps is not None else 1
         self.max_frames_between_kfs_after_reloc = (
-            self.max_frames_between_kfs
+            Parameters.kMaxFramesBetweenKeyFramesAfterRelocalization
+            if Parameters.kMaxFramesBetweenKeyFramesAfterRelocalization > 0
+            else self.max_frames_between_kfs
         )  # after relocalization, we need to insert a keyframe to avoid drift
-        self.min_frames_between_kfs = 0
+        self.min_frames_between_kfs = Parameters.kMinFramesBetweenKeyFrames
 
         # params read and set by Slam
         self.far_points_threshold = None
@@ -453,9 +459,10 @@ class Tracking:
                 # print('     # num_matched_map_points_in_last_pose_opt: %d' % (self.num_matched_map_points_in_last_pose_opt) )
                 # print('     # matched points: %d' % (self.num_matched_map_points) )
 
+                min_inliers_track_frame = Parameters.kNumMinInliersPoseOptimizationTrackFrame
                 if (
                     not self.pose_is_ok
-                    or self.num_matched_map_points < kNumMinInliersPoseOptimizationTrackFrame
+                    or self.num_matched_map_points < min_inliers_track_frame
                 ):
                     # if not self.pose_is_ok or self.num_matched_map_points_in_last_pose_opt < kNumMinInliersPoseOptimizationTrackFrame:
                     Printer.red(
@@ -501,7 +508,18 @@ class Tracking:
         des_cur = f_cur.des
         kps_cur = f_cur.kps
         matching_result = FeatureTrackerShared.feature_matcher.match(
-            f_cur.img, f_ref.img, des_cur, des_ref, kps1=kps_cur, kps2=kps_ref
+            f_cur.img,
+            f_ref.img,
+            des_cur,
+            des_ref,
+            kps1=kps_cur,
+            kps2=kps_ref,
+            data={
+                "scales1": f_cur.sizes,
+                "oris1": f_cur.angles,
+                "scales2": f_ref.sizes[idxs_ref_map_points] if f_ref.sizes is not None else None,
+                "oris2": f_ref.angles[idxs_ref_map_points] if f_ref.angles is not None else None,
+            },
         )
         matching_result.idxs2 = idxs_ref_map_points[
             matching_result.idxs2
@@ -629,9 +647,10 @@ class Tracking:
         # print('     # num_matched_map_points_in_last_pose_opt: %d' % (self.num_matched_map_points_in_last_pose_opt) )
         # print('     # matched points: %d' % (self.num_matched_map_points) )
 
+        min_inliers_track_frame = Parameters.kNumMinInliersPoseOptimizationTrackFrame
         if (
             not self.pose_is_ok
-            or self.num_matched_map_points < kNumMinInliersPoseOptimizationTrackFrame
+            or self.num_matched_map_points < min_inliers_track_frame
         ):
             # if not self.pose_is_ok or self.num_matched_map_points_in_last_pose_opt < kNumMinInliersPoseOptimizationTrackFrame:
             f_cur.remove_frame_views(idxs_cur)
@@ -719,9 +738,10 @@ class Tracking:
         self.num_matched_map_points = f_cur.update_map_points_statistics(self.sensor_type)
 
         # print('     # num_matched_points: %d' % (self.num_matched_map_points) )
+        min_inliers_track_local_map = Parameters.kNumMinInliersPoseOptimizationTrackLocalMap
         if (
             not self.pose_is_ok
-            or self.num_matched_map_points < kNumMinInliersPoseOptimizationTrackLocalMap
+            or self.num_matched_map_points < min_inliers_track_local_map
         ):
             Printer.red(
                 f"failure in tracking local map, # matched map points: {self.num_matched_map_points}"
@@ -831,7 +851,7 @@ class Tracking:
         if not Parameters.kLocalMappingOnSeparateThread:
             if self.sensor_type != SensorType.MONOCULAR:
                 # NOTE: in single-threaded mode, is_local_mapping_idle is always True => cond1b always Trye => too many keyframes
-                self.min_frames_between_kfs = 3
+                self.min_frames_between_kfs = max(self.min_frames_between_kfs, 3)
 
         # condition 1a: more than "max_frames_between_kfs" have passed from last keyframe insertion
         cond1a = f_cur.id >= (self.kf_last.id + self.max_frames_between_kfs)
@@ -1007,10 +1027,12 @@ class Tracking:
                     )  # NOTE: no timeout here, just wait until local mapping is idle!
         else:
             # if we are close to bad tracking give local mapping more time
+            weak_tracking_inliers_threshold = (
+                Parameters.kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle
+            )
             if (
                 self.num_matched_map_points
-                and self.num_matched_map_points
-                < kNumMinInliersTrackLocalMapForNotWaitingLocalMappingIdle
+                and self.num_matched_map_points < weak_tracking_inliers_threshold
             ):
                 # if self.local_mapping.queue_size() > 0: # less restrictive
                 if not self.local_mapping.is_idle() or self.local_mapping.queue_size() > 0:

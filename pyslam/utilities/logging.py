@@ -19,6 +19,7 @@
 
 import sys
 import os
+import queue
 import numpy as np
 import logging
 from termcolor import colored
@@ -328,8 +329,15 @@ class LoggerQueue(SingletonBase):
             datefmt=datefmt,
         )
 
-        # Shared log queue
-        self.log_queue = mp.Queue()
+        # Shared log queue. Fallback to in-process queue when multiprocessing
+        # semaphores are unavailable in restricted environments.
+        try:
+            self.log_queue = mp.Queue()
+        except Exception as e:
+            print(
+                f"LoggerQueue[{log_file}]: mp.Queue unavailable ({e}); using queue.Queue fallback."
+            )
+            self.log_queue = queue.Queue()
 
         # File handler for the listener
         self.file_handler = logging.FileHandler(log_file)

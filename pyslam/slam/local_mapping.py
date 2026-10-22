@@ -484,6 +484,7 @@ class LocalMapping:
             LocalMapping.print(
                 f"\t #culled keyframes: {num_culled_keyframes}, timing: {self.timer_kf_culling.last_elapsed}"
             )
+            self.cap_num_keyframes()
 
         if self.slam.semantic_mapping is not None and self.kf_cur is not None:
             LocalMapping.print("pushing new keyframe to semantic mapping...")
@@ -547,6 +548,35 @@ class LocalMapping:
     def cull_map_points(self):
         LocalMapping.print(">>>> culling map points...")
         return self.local_mapping_core.cull_map_points()
+
+    def cap_num_keyframes(self):
+        # bounded memory: keep at most kMaxNumKeyFramesInMap keyframes in the map by removing the oldest ones
+        # (the first keyframe and keyframes with loop edges cannot be removed, see KeyFrame.set_bad())
+        max_kfs = int(os.environ.get("PYSLAM_MAX_KEYFRAMES", Parameters.kMaxNumKeyFramesInMap))
+        if max_kfs <= 0:
+            return 0
+        kfs = self.map.get_keyframes()
+        num_excess = len(kfs) - max_kfs
+        if num_excess <= 0:
+            return 0
+        num_removed = 0
+        for kf in sorted(kfs, key=lambda k: k.kid):
+            if num_removed >= num_excess:
+                break
+            if kf.kid == 0 or kf is self.kf_cur or kf.is_bad():
+                continue
+            kf.set_bad()
+            if kf.is_bad():
+                num_removed += 1
+                if hasattr(kf, "release_memory"):
+                    kf.release_memory()
+                lc = self.slam.loop_closing
+                if lc is not None and hasattr(lc, "map_frame_id_to_img_lock"):
+                    with lc.map_frame_id_to_img_lock:
+                        lc.map_frame_id_to_img.pop(kf.id, None)
+        self.total_num_capped_keyframes = getattr(self, "total_num_capped_keyframes", 0) + num_removed
+        LocalMapping.print(f"\t #keyframes removed by the map size cap ({max_kfs}): {num_removed}")
+        return num_removed
 
     def cull_keyframes(self):
         LocalMapping.print(">>>> culling keyframes...")

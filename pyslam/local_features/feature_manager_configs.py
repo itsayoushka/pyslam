@@ -66,7 +66,7 @@ class FeatureManagerConfigs(object):
         detector_type=FeatureDetectorTypes.ORB2,
         descriptor_type=FeatureDescriptorTypes.ORB2,
         sigma_level0=Parameters.kSigmaLevel0,
-        deterministic=False,
+        deterministic=True,
     )
 
     BRISK = dict(

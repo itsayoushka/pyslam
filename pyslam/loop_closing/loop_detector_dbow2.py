@@ -45,7 +45,7 @@ from .loop_detector_vocabulary import VocabularyData
 
 import pyslam.config as config
 
-config.cfg.set_lib("pydbow2")
+config.cfg.set_lib("pydbow2", prepend=True)
 import pydbow2 as dbow2
 
 

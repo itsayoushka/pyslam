@@ -100,6 +100,11 @@ if __name__ == "__main__":
         default="/home/luigi/Work/slam_wss/pyslam-master-new/results/eval_2025_04_13-21_16_14/tum",
         help="Path of the output folder",
     )
+    argparser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Run only the first dataset/preset with max_frames=20 to validate benchmark wiring.",
+    )
     args = argparser.parse_args()
 
     if args.just_create_report:
@@ -119,8 +124,13 @@ if __name__ == "__main__":
         evaluation_manager = SlamEvaluationManager(
             args.config_file, args.template_config_file, just_create_report=args.just_create_report
         )
+        if args.smoke_test:
+            evaluation_manager.configure_smoke_test(max_frames=20)
         evaluation_manager.run_evaluation()
 
-    evaluation_manager.create_final_table()
-
-    print("Done.")
+    if not getattr(evaluation_manager, "had_run_failures", False):
+        evaluation_manager.create_final_table()
+        print("Done.")
+    else:
+        print("Evaluation finished with failed runs. See errors above.")
+        sys.exit(1)

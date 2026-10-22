@@ -124,6 +124,8 @@ class Slam(object):
         self.environment_type = environment_type
         self.slam_mode = slam_mode
         self.headless = headless
+        # Must be initialized before any operation that can fail; __del__ reads this.
+        self.has_quit = False
 
         self.feature_tracker = None
         self.init_feature_tracker(feature_tracker_config)
@@ -139,8 +141,6 @@ class Slam(object):
         self.reset_requested = False
 
         self.viewer3d = viewer3d
-
-        self.has_quit = False
 
         if slam_mode == SlamMode.SLAM:
             self.init_semantic_mapping(semantic_mapping_config, headless=headless)
@@ -233,7 +233,8 @@ class Slam(object):
         print("SLAM: done")
 
     def __del__(self):
-        self.quit()
+        if hasattr(self, "has_quit"):
+            self.quit()
 
     def init_feature_tracker(self, feature_tracker_config):
         feature_tracker = feature_tracker_factory(**feature_tracker_config)
@@ -280,7 +281,25 @@ class Slam(object):
             self.GBA = self.loop_closing.GBA
             if do_start_loop_closing:
                 self.loop_closing.start()
-                wait_for_ready(self.loop_closing.is_ready, "LoopClosing")
+                loop_ready_timeout = float(
+                    os.environ.get("PYSLAM_LOOP_CLOSING_READY_TIMEOUT_SEC", "120")
+                )
+                try:
+                    wait_for_ready(
+                        self.loop_closing.is_ready,
+                        "LoopClosing",
+                        timeout=loop_ready_timeout,
+                    )
+                except TimeoutError:
+                    # Avoid hanging forever if loop closing process never reaches ready state.
+                    Printer.red(
+                        f"SLAM: LoopClosing readiness timeout after {loop_ready_timeout}s; aborting run."
+                    )
+                    try:
+                        self.loop_closing.quit()
+                    except Exception:
+                        pass
+                    raise
                 Printer.green(f"SLAM: Loop closing initialized and ready")
             else:
                 Printer.orange(

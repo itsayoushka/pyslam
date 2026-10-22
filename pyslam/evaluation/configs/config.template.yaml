@@ -86,9 +86,11 @@ FOLDER_DATASET:
   # 'name' is used for specifying a glob pattern, e.g. *png, *jpeg, etc...
   name: %dataset_images_glob_pattern%  
   settings: %settings_path% # do not forget to correctly set the corresponding camera settings file 
-  groundtruth_file: groundtruth.txt
+  groundtruth_file: %groundtruth_file_path%
   fps: %dataset_fps%
-  #timestamps: times.txt # can be used here and to be intended as the frame timestamps 
+  timestamps: %timestamps_path% # can be used here and to be intended as the frame timestamps 
+  image_scale: %image_scale%
+  max_frames: %max_frames%
 
 
 ROS1BAG_DATASET:

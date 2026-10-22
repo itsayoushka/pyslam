@@ -285,16 +285,15 @@ class KeyFrame(Frame, KeyFrameGraph):
             img_id=frame.img_id,
         )  # here we MUST have img=None in order to avoid recomputing keypoint info
 
-        if frame.img is not None:
-            self.img = frame.img  # this is already a copy of an image
-        else:
-            if img is not None:
+        if Parameters.kStoreKeyFrameImages or Frame.is_store_imgs:
+            if frame.img is not None:
+                self.img = frame.img  # this is already a copy of an image
+            elif img is not None:
                 self.img = img  # .copy()
 
-        if frame.img_right is not None:
-            self.img_right = frame.img_right
-        else:
-            if img_right is not None:
+            if frame.img_right is not None:
+                self.img_right = frame.img_right
+            elif img_right is not None:
                 self.img_right = img_right  # .copy()
 
         if frame.depth_img is not None:

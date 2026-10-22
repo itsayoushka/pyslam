@@ -30,7 +30,30 @@ def run_command_sync(command, debug=False):
     return p
 
 
-def run_command_async(command, output_log_filename=None, verbose=False, msg=None):
+def _terminate_process_tree(pid):
+    try:
+        parent = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+    children = parent.children(recursive=True)
+    for proc in children:
+        try:
+            proc.terminate()
+        except psutil.NoSuchProcess:
+            pass
+    try:
+        parent.terminate()
+    except psutil.NoSuchProcess:
+        pass
+    _, alive = psutil.wait_procs(children + [parent], timeout=5)
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.NoSuchProcess:
+            pass
+
+
+def run_command_async(command, output_log_filename=None, verbose=False, msg=None, timeout_sec=None):
     # Redirect the standard output and standard error output if specifying an output file
     redirected_std_out = subprocess.PIPE
     redirected_std_err = subprocess.PIPE
@@ -46,11 +69,23 @@ def run_command_async(command, output_log_filename=None, verbose=False, msg=None
     process = subprocess.Popen(
         command,
         shell=True,
+        executable="/bin/bash",
         stdout=redirected_std_out,
         stderr=redirected_std_err,
         text=True,  # Use text=True to get text output
     )
-    stdout, stderr = process.communicate()
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        _terminate_process_tree(process.pid)
+        timeout_msg = f"EVAL_TIMEOUT_EXCEEDED: process killed after {timeout_sec} seconds\n"
+        if output_log_filename:
+            try:
+                with open(output_log_filename, "a", encoding="utf-8", errors="ignore") as f:
+                    f.write(timeout_msg)
+            except Exception:
+                pass
+        return 124, "", timeout_msg
     return process.returncode, stdout, stderr
 
 

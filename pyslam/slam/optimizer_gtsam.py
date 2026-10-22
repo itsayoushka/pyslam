@@ -16,20 +16,32 @@
 * You should have received a copy of the GNU General Public License
 * along with PYSLAM. If not, see <http://www.gnu.org/licenses/>.
 """
+from __future__ import annotations
 
 import math
 import numpy as np
 import sys
 import time
+import functools
 
 import platform
 import threading
 import multiprocessing as mp
 import traceback
 
-import gtsam
-import gtsam_factors
-from gtsam.symbol_shorthand import X, L
+GTSAM_AVAILABLE = True
+_GTSAM_IMPORT_ERROR = None
+try:
+    import gtsam
+    import gtsam_factors
+    from gtsam.symbol_shorthand import X, L
+except ModuleNotFoundError as e:
+    GTSAM_AVAILABLE = False
+    _GTSAM_IMPORT_ERROR = e
+    gtsam = None
+    gtsam_factors = None
+    X = None
+    L = None
 
 import g2o
 
@@ -46,6 +58,15 @@ from .keyframe import KeyFrame
 kMinDepth = Parameters.kMinDepth
 kSigmaForFixed = 1e-6
 kWeightForDisabledFactor = 1e-6
+
+
+def _require_gtsam_backend():
+    if GTSAM_AVAILABLE:
+        return
+    raise ModuleNotFoundError(
+        "gtsam backend is not available. Install `gtsam` and build `gtsam_factors` "
+        "to use pyslam.slam.optimizer_gtsam."
+    ) from _GTSAM_IMPORT_ERROR
 
 
 # gtsam helper functions
@@ -2422,6 +2443,34 @@ def optimize_essential_graph2(
 
     mean_squared_error = graph.error(result) / max(num_graph_edges, 1)
     return mean_squared_error
+
+
+# Wrap public optimizer entry points so importing this module does not fail
+# when gtsam is unavailable, while still producing a clear runtime error
+# when any gtsam-based optimization is requested.
+def _wrap_requires_gtsam(func):
+    @functools.wraps(func)
+    def _wrapped(*args, **kwargs):
+        _require_gtsam_backend()
+        return func(*args, **kwargs)
+
+    return _wrapped
+
+
+if not GTSAM_AVAILABLE:
+    _gtsam_entry_points = [
+        "bundle_adjustment",
+        "global_bundle_adjustment",
+        "global_bundle_adjustment_map",
+        "pose_optimization",
+        "local_bundle_adjustment",
+        "optimize_sim3",
+        "optimize_essential_graph",
+        "optimize_essential_graph2",
+    ]
+    for _fn_name in _gtsam_entry_points:
+        if _fn_name in globals():
+            globals()[_fn_name] = _wrap_requires_gtsam(globals()[_fn_name])
 
 
 # # ------------------------------------------------------------------------------------------

@@ -48,6 +48,17 @@ class SuperPointOptions:
         self.conf_thresh = 0.015
         self.nn_thresh = 0.7
 
+        # Optional runtime overrides from settings.yaml (no hardcoded tuning).
+        system_settings = getattr(config.cfg, "system_settings", {})
+        if "SuperPoint.conf_thresh" in system_settings:
+            self.conf_thresh = float(system_settings["SuperPoint.conf_thresh"])
+        elif "SuperPoint.confThresh" in system_settings:
+            self.conf_thresh = float(system_settings["SuperPoint.confThresh"])
+        if "SuperPoint.nms_dist" in system_settings:
+            self.nms_dist = int(system_settings["SuperPoint.nms_dist"])
+        if "SuperPoint.nn_thresh" in system_settings:
+            self.nn_thresh = float(system_settings["SuperPoint.nn_thresh"])
+
         use_cuda = torch.cuda.is_available() and do_cuda
         device = torch.device("cuda" if use_cuda else "cpu")
         print("SuperPoint using ", device)

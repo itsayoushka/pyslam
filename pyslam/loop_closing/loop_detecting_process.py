@@ -20,6 +20,8 @@
 import os
 import time
 import math
+import queue
+from threading import Thread, Lock as ThreadLock, Condition as ThreadCondition
 
 # import multiprocessing as mp
 import torch.multiprocessing as mp
@@ -78,6 +80,11 @@ kDataFolder = kRootFolder + "/data"
 # For efficiency, we use multiprocessing to run detection tasks in a parallel process. That means on a different CPU core thanks to multiprocessing.
 # This wouldn't be possible with python multithreading that runs threads on the same CPU core (due to the GIL).
 # A LoopDetectingProcess instance is owned by LoopClosing. The latter does the full job of managing (1) detection, (2) consistency verification, (3) geometry verification and (4) correction.
+class _LocalValue:
+    def __init__(self, value):
+        self.value = value
+
+
 class LoopDetectingProcess:
     def __init__(self, slam: "Slam", loop_detector_config=LoopDetectorConfigs.DBOW3):
         set_rlimit()
@@ -101,68 +108,91 @@ class LoopDetectingProcess:
 
         self.loop_detector_config = loop_detector_config
         self.slam_info = SlamFeatureManagerInfo(slam=slam)
+        self.thread_mode = False
+        self.mp_manager = None
 
         # NOTE: We must initialze in the launched process in order to avoid pickling problems.
         # self.loop_detector = loop_detector_factory(**loop_detector_config, slam_info=self.slam_info)
         # if slam is not None:
         #     loop_detector_config_check(self.loop_detector, slam.feature_tracker.feature_manager.descriptor_type)
 
-        self.time_loop_detection = mp.Value("d", 0.0)
-
         self.last_input_task = None
 
-        self.reset_mutex = mp.Lock()
-        self.reset_requested = mp.Value("i", -1)
+        force_thread_mode = os.environ.get("PYSLAM_LOOP_DETECTING_FORCE_THREAD", "0") == "1"
+        if not force_thread_mode:
+            try:
+                self.mp_manager = MultiprocessingManager()
+                self.time_loop_detection = mp.Value("d", 0.0)
+                self.reset_mutex = mp.Lock()
+                self.reset_requested = mp.Value("i", -1)
+                self.load_request_completed = mp.Value("i", 0)
+                self.load_request_condition = mp.Condition()
+                self.save_request_completed = mp.Value("i", 0)
+                self.save_request_condition = mp.Condition()
+                # NOTE: We use the MultiprocessingManager to manage queues and avoid pickling problems with multiprocessing.
+                self.q_in = self.mp_manager.Queue()
+                self.q_out = self.mp_manager.Queue()
+                self.q_out_reloc = self.mp_manager.Queue()
+                self.q_in_condition = mp.Condition()
+                self.q_out_condition = mp.Condition()
+                self.q_out_reloc_condition = mp.Condition()
+                self.is_running = mp.Value("i", 0)
+                self.is_looping = mp.Value("i", 0)
+            except Exception as e:
+                Printer.orange(
+                    f"LoopDetectingProcess: multiprocessing unavailable ({e}); using thread fallback."
+                )
+                self.thread_mode = True
+        else:
+            self.thread_mode = True
 
-        self.load_request_completed = mp.Value("i", 0)
-        self.load_request_condition = mp.Condition()
-        self.save_request_completed = mp.Value("i", 0)
-        self.save_request_condition = mp.Condition()
-
-        # NOTE: We use the MultiprocessingManager to manage queues and avoid pickling problems with multiprocessing.
-        self.mp_manager = MultiprocessingManager()
-        self.q_in = self.mp_manager.Queue()
-        self.q_out = self.mp_manager.Queue()
-        self.q_out_reloc = self.mp_manager.Queue()
-
-        self.q_in_condition = mp.Condition()
-        self.q_out_condition = mp.Condition()
-        self.q_out_reloc_condition = mp.Condition()
-
-        self.is_running = mp.Value("i", 0)
-        self.is_looping = mp.Value("i", 0)
+        if self.thread_mode:
+            self.time_loop_detection = _LocalValue(0.0)
+            self.reset_mutex = ThreadLock()
+            self.reset_requested = _LocalValue(-1)
+            self.load_request_completed = _LocalValue(0)
+            self.load_request_condition = ThreadCondition()
+            self.save_request_completed = _LocalValue(0)
+            self.save_request_condition = ThreadCondition()
+            self.q_in = queue.Queue()
+            self.q_out = queue.Queue()
+            self.q_out_reloc = queue.Queue()
+            self.q_in_condition = ThreadCondition()
+            self.q_out_condition = ThreadCondition()
+            self.q_out_reloc_condition = ThreadCondition()
+            self.is_running = _LocalValue(0)
+            self.is_looping = _LocalValue(0)
 
         self.start()
 
     def start(self):
-        self.process = mp.Process(
-            target=self.run,
-            args=(
-                self.loop_detector_config,
-                self.slam_info,
-                self.q_in,
-                self.q_in_condition,
-                self.q_out,
-                self.q_out_condition,
-                self.q_out_reloc,
-                self.q_out_reloc_condition,
-                self.is_running,
-                self.is_looping,
-                self.reset_mutex,
-                self.reset_requested,
-                self.load_request_completed,
-                self.load_request_condition,
-                self.save_request_completed,
-                self.save_request_condition,
-                self.time_loop_detection,
-            ),
+        worker_args = (
+            self.loop_detector_config,
+            self.slam_info,
+            self.q_in,
+            self.q_in_condition,
+            self.q_out,
+            self.q_out_condition,
+            self.q_out_reloc,
+            self.q_out_reloc_condition,
+            self.is_running,
+            self.is_looping,
+            self.reset_mutex,
+            self.reset_requested,
+            self.load_request_completed,
+            self.load_request_condition,
+            self.save_request_completed,
+            self.save_request_condition,
+            self.time_loop_detection,
         )
-
-        # self.process.daemon = True
-        self.process.start()
-
-        if MultiprocessingManager.is_start_method_spawn():
-            time.sleep(3)  # give a bit of time for the process to start and initialize
+        if self.thread_mode:
+            self.process = Thread(target=self.run, args=worker_args, daemon=True)
+            self.process.start()
+        else:
+            self.process = mp.Process(target=self.run, args=worker_args)
+            self.process.start()
+            if MultiprocessingManager.is_start_method_spawn():
+                time.sleep(3)  # give a bit of time for the process to start and initialize
 
     def is_ready(self):
         return self.is_running.value == 1 and self.is_looping.value == 1
@@ -259,10 +289,15 @@ class LoopDetectingProcess:
                 Printer.orange(
                     "Warning: Loop detection process did not terminate in time, forced kill."
                 )
-                self.process.terminate()
+                if not self.thread_mode:
+                    self.process.terminate()
 
             # Shutdown the manager AFTER the process has exited
-            if hasattr(self, "mp_manager") and self.mp_manager is not None:
+            if (
+                not self.thread_mode
+                and hasattr(self, "mp_manager")
+                and self.mp_manager is not None
+            ):
                 try:
                     self.mp_manager.shutdown()
                 except Exception as e:

@@ -153,7 +153,7 @@ class FeatureTrackerConfigs:
         sigma_level0=Parameters.kSigmaLevel0,
         match_ratio_test=kDefaultRatioTest,
         tracker_type=kTrackerType,
-        deterministic=False,
+        deterministic=True,
     )
 
     BRISK = dict(

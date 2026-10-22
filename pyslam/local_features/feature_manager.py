@@ -194,6 +194,8 @@ class FeatureManager:
             False  # automatically managed below depending on selected features
         )
         self.need_color_image = False  # automatically managed below depending on selected features
+        self._warned_setmaxfeatures_detector = False
+        self._warned_setmaxfeatures_descriptor = False
 
         self.keypoint_filter_type = KeyPointFilterTypes.SAT  # default keypoint-filter type
         self.need_nms = False  # need or not non-maximum suppression of keypoints
@@ -363,6 +365,9 @@ class FeatureManager:
             self._feature_detector = Orbslam2Feature2D(
                 self.num_features, self.scale_factor, orb2_num_levels, deterministic
             )
+            # ORB2 descriptors must be extracted together with keypoints.
+            # If a pyramid adaptor is enabled, avoid the detect()->compute() path.
+            self.force_multiscale_detect_and_compute = True
             self.keypoint_filter_type = (
                 KeyPointFilterTypes.NONE
             )  # ORB2 cpp implementation already includes the algorithm OCTREE_NMS
@@ -979,16 +984,20 @@ class FeatureManager:
             try:
                 self._feature_detector.setMaxFeatures(self.num_features)
             except:
-                Printer.orange(
-                    "WARNING: could not set nFeatures in detector: ", self.detector_type.name
-                )
+                if not self._warned_setmaxfeatures_detector:
+                    Printer.orange(
+                        "WARNING: could not set nFeatures in detector: ", self.detector_type.name
+                    )
+                    self._warned_setmaxfeatures_detector = True
         if self._feature_descriptor is not None:
             try:
                 self._feature_descriptor.setMaxFeatures(self.num_features)
             except:
-                Printer.orange(
-                    "WARNING: could not set nFeatures in descriptor: ", self.detector_type.name
-                )
+                if not self._warned_setmaxfeatures_descriptor:
+                    Printer.orange(
+                        "WARNING: could not set nFeatures in descriptor: ", self.detector_type.name
+                    )
+                    self._warned_setmaxfeatures_descriptor = True
 
     def set_double_num_features(self):
         if not hasattr(self, "_original_num_features"):
