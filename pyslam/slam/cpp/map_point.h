@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "slam_commons.h"
+
 #include <Eigen/Dense>
 
 #include <atomic>
@@ -88,6 +90,8 @@ class MapPointBase {
 
     // Constructor - matches Python: __init__(self, id=None)
     MapPointBase(int id = -1);
+
+    LiveCounter<LiveMapPointTag> _live_counter;
 
     // Destructor
     virtual ~MapPointBase() {

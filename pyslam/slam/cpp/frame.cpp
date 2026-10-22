@@ -853,6 +853,22 @@ int Frame::update_map_points_statistics(const SensorType &sensor_type) {
     return num_matched_inlier_points;
 }
 
+void Frame::release_frame_views() {
+    std::vector<std::pair<MapPointPtr, int>> frame_views_to_remove;
+    {
+        std::lock_guard<std::mutex> lock(_lock_features);
+        for (size_t i = 0; i < points.size(); ++i) {
+            if (points[i]) {
+                frame_views_to_remove.emplace_back(points[i], static_cast<int>(i));
+            }
+        }
+    }
+    auto self = shared_from_this();
+    for (const auto &[p, idx] : frame_views_to_remove) {
+        p->remove_frame_view(self, idx);
+    }
+}
+
 int Frame::clean_outlier_map_points() {
     int num_matched_points = 0;
     std::vector<std::pair<MapPointPtr, int>> frame_views_to_remove;

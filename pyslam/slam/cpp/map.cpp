@@ -207,21 +207,31 @@ int Map::add_frame(FramePtr &frame, bool override_id) {
         return -1;
     }
 
-    std::lock_guard<MapMutex> lock(_lock);
     int ret = frame->id;
-    // Add to frames deque (with size limit)
-    if (frames.size() >= Parameters::kMaxLenFrameDeque) {
-        frames.pop_front();
-    }
-    frames.push_back(frame);
+    FramePtr evicted;
+    {
+        std::lock_guard<MapMutex> lock(_lock);
+        // Add to frames deque (with size limit)
+        if (frames.size() >= Parameters::kMaxLenFrameDeque) {
+            evicted = frames.front();
+            frames.pop_front();
+        }
+        frames.push_back(frame);
 
-    // Update max frame ID
-    if (override_id) {
-        ret = max_frame_id;
-        frame->id = ret;
-        max_frame_id++;
-    } else {
-        max_frame_id = std::max(max_frame_id, frame->id + 1);
+        // Update max frame ID
+        if (override_id) {
+            ret = max_frame_id;
+            frame->id = ret;
+            max_frame_id++;
+        } else {
+            max_frame_id = std::max(max_frame_id, frame->id + 1);
+        }
+    }
+    // Map points keep a shared pointer to every frame that observed them (frame views, only used to draw feature
+    // trails over the last frames): without this, no frame is ever freed and memory grows with every frame.
+    // Keyframes keep their links (they stay alive in the map anyway). Done outside the map lock.
+    if (evicted && !evicted->is_keyframe) {
+        evicted->release_frame_views();
     }
     return ret;
 }

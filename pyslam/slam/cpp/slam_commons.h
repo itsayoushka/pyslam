@@ -19,7 +19,24 @@
 
 #pragma once
 
+#include <atomic>
+
 namespace pyslam {
+
+// Live-instance counter (memory diagnostics): a member of type LiveCounter<Tag> counts the objects alive.
+template <typename Tag> struct LiveCounter {
+    static std::atomic<long> &count() {
+        static std::atomic<long> n{0};
+        return n;
+    }
+    LiveCounter() { ++count(); }
+    LiveCounter(const LiveCounter &) { ++count(); }
+    LiveCounter &operator=(const LiveCounter &) { return *this; }
+    ~LiveCounter() { --count(); }
+};
+struct LiveFrameTag {};
+struct LiveKeyFrameTag {};
+struct LiveMapPointTag {};
 
 // SLAM states enum - matches Python SlamState
 enum class SlamState {

@@ -115,7 +115,7 @@ cmake .. \
 
 # Build the module
 echo "Building the module..."
-make -j$(nproc)
+make -j"${PYSLAM_BUILD_JOBS:-1}" -l"${PYSLAM_BUILD_LOAD:-1}"
 
 # The module is already built to the correct location by CMake
 echo "Module built successfully!"

@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "slam_commons.h"
+
 #include "camera.h"
 #include "camera_pose.h"
 #include "feature_shared_resources.h"
@@ -269,6 +271,8 @@ class Frame : public FrameBase, public inheritable_enable_shared_from_this<Frame
 
     explicit Frame(int id) : FrameBase(id) {}
 
+    LiveCounter<LiveFrameTag> _live_counter;
+
     // Destructor
     virtual ~Frame() { reset(); }
 
@@ -292,6 +296,8 @@ class Frame : public FrameBase, public inheritable_enable_shared_from_this<Frame
     bool is_stereo_observation(int idx) const { return kps_ur.size() > 0 && kps_ur[idx] >= 0; }
 
     void remove_frame_views(const std::vector<int> &idxs);
+    // Drop all map point <-> frame view links of this frame (frees a non-keyframe frame once it leaves the map deque)
+    void release_frame_views();
     void reset_points();
     std::vector<MapPointPtr> get_points() const;
     std::vector<MapPointPtr> get_matched_points() const;

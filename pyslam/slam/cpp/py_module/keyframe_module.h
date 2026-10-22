@@ -109,6 +109,7 @@ void bind_keyframe(py::module &m) {
         .def("set_not_erase", &pyslam::KeyFrame::set_not_erase)
         .def("set_erase", &pyslam::KeyFrame::set_erase)
         .def("set_bad", &pyslam::KeyFrame::set_bad)
+        .def("release_memory", &pyslam::KeyFrame::release_memory)
         .def("get_matched_points", &pyslam::KeyFrame::get_matched_points)
         .def("get_matched_good_points", &pyslam::KeyFrame::get_matched_good_points)
         .def("init_observations", &pyslam::KeyFrame::init_observations)

@@ -184,6 +184,8 @@ class KeyFrame : public Frame, public KeyFrameGraph {
 
     explicit KeyFrame(int id) : Frame(id) {}
 
+    LiveCounter<LiveKeyFrameTag> _live_counter_kf;
+
     // Destructor
     ~KeyFrame() {
         // Clear references to prevent circular dependencies during shutdown
@@ -226,6 +228,9 @@ class KeyFrame : public Frame, public KeyFrameGraph {
     void set_not_erase();
     void set_erase();
     void set_bad();
+    // Free the heavy data of a bad keyframe (images, map point links, kd-tree); pose and spanning-tree parent are
+    // kept because the trajectory history still references the keyframe. Indices stay valid (points set to null).
+    void release_memory();
 
 #ifdef USE_PYTHON
     // Numpy serialization

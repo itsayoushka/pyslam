@@ -235,7 +235,7 @@ def _import_python_core():
     except Exception as e:
         traceback.print_exc()
         print(f"❌ Failed to import Python fallback implementations: {e}")
-        return None, False
+        return {}, False
 
 
 # Try to import the C++ core module
@@ -257,11 +257,18 @@ if CPP_AVAILABLE:
     atexit.register(_cleanup_cpp_resources)
 else:
     if USE_PYTHON_FALLBACK:
-        print("❌ C++ core module not available. Falling back to Python implementations.")
+        if PYTHON_AVAILABLE:
+            print("❌ C++ core module not available. Falling back to Python implementations.")
 
-        # Assign all classes from fallback to global namespace
-        for name, cls in python_classes.items():
-            globals()[name] = cls
+            # Assign all classes from fallback to global namespace
+            for name, cls in python_classes.items():
+                globals()[name] = cls
+        else:
+            Printer.red(
+                "❌ C++ core module not available and Python fallback imports failed.\n"
+                "Please install missing Python deps (e.g. gtsam) or rebuild C++ core."
+            )
+            sys.exit(1)
     else:
         if USE_CPP_CORE:
             Printer.red(
@@ -289,8 +296,9 @@ class CppModule:
         else:
             if USE_PYTHON_FALLBACK:
                 # Use fallback implementations
-                for name, cls in python_classes.items():
-                    setattr(self, name, cls)
+                if PYTHON_AVAILABLE:
+                    for name, cls in python_classes.items():
+                        setattr(self, name, cls)
 
 
 class PythonModule:
@@ -299,6 +307,8 @@ class PythonModule:
     classes = python_classes
 
     def __init__(self):
+        if not PYTHON_AVAILABLE:
+            return
         for name, cls in python_classes.items():
             setattr(self, name, cls)
 

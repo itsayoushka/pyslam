@@ -54,10 +54,16 @@
 
 #include "py_module/semantic_mapping_shared_resources_module.h"
 
+#include "slam_commons.h"
 namespace py = pybind11;
 
 PYBIND11_MODULE(cpp_core, m) {
     m.doc() = "PYSLAM C++ Core Module - High-performance SLAM classes";
+    m.def("live_counts", []() {
+        return py::dict(py::arg("frames") = pyslam::LiveCounter<pyslam::LiveFrameTag>::count().load(),
+                        py::arg("keyframes") = pyslam::LiveCounter<pyslam::LiveKeyFrameTag>::count().load(),
+                        py::arg("map_points") = pyslam::LiveCounter<pyslam::LiveMapPointTag>::count().load());
+    }, "Number of live Frame (incl. KeyFrame), KeyFrame and MapPoint objects (memory diagnostics)");
 
     // ------------------------------------------------------------
     // SLAM-specific opaque containers

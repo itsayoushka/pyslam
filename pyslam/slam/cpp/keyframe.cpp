@@ -514,4 +514,21 @@ void KeyFrame::set_bad() {
     }
 }
 
+void KeyFrame::release_memory() {
+    if (!is_bad()) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(_lock_features);
+        img = cv::Mat();
+        img_right = cv::Mat();
+        depth_img = cv::Mat();
+        semantic_img = cv::Mat();
+        semantic_instances_img = cv::Mat();
+        std::fill(points.begin(), points.end(), nullptr);
+    }
+    std::lock_guard<std::mutex> lock(_lock_kd);
+    _kd.reset();
+}
+
 } // namespace pyslam
