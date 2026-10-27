@@ -18,9 +18,10 @@ unchanged; the benchmark only sets the presets below.
 | `run_docker.sh` | runs one config in the Docker image |
 | `evaluate.py` | evaluates every run against the RTK-GNSS/INS reference (`results/runs.csv`) |
 | `aggregate.py` | applies the protocol and writes the per-pair results and tables (`results/per_pair.csv`) |
+| `paper/` | scripts of the paper figures (`make_figures.py`), appendix table rows (`make_table.py`) and trajectory export (`export_trajectories.py`) |
 | `capture_versions.sh` | records the software versions in `versions/` |
 | `settings/` | camera settings of rig A and rig B at image scale 0.4 |
-| `results/` | reference results of the paper (54 runs, 44 pairs) |
+| `results/` | reference results of the paper (54 runs, 44 pairs) and the aligned trajectories of the figure (`trajectories_xy.csv`) |
 | `versions/reference_2026-10-17/` | environment of the runs of the paper |
 
 ## Benchmark design
